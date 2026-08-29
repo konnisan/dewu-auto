@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="得物自动报名 V1"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="状态：未启动"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvScreen"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="屏幕：-" />
+
+        <Button
+            android:id="@+id/btnAccessibility"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="打开无障碍设置" />
+
+        <Button
+            android:id="@+id/btnOpenDewu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="仅打开得物" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="运行参数"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/etCardKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="卡密（Debug 可留空）"
+            android:inputType="text" />
+
+        <Spinner
+            android:id="@+id/spCategory"
+            android:layout_width="match_parent"
+            android:layout_height="48dp" />
+
+        <Spinner
+            android:id="@+id/spSortMode"
+            android:layout_width="match_parent"
+            android:layout_height="48dp" />
+
+        <EditText
+            android:id="@+id/etMaxScrolls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="列表最大下滑次数"
+            android:inputType="number"
+            android:text="5" />
+
+        <EditText
+            android:id="@+id/etHomeBrowseCount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="首页作品数量"
+            android:inputType="number"
+            android:text="1" />
+
+        <EditText
+            android:id="@+id/etRestMin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="休息最小分钟"
+            android:inputType="number"
+            android:text="5" />
+
+        <EditText
+            android:id="@+id/etRestMax"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="休息最大分钟"
+            android:inputType="number"
+            android:text="10" />
+
+        <EditText
+            android:id="@+id/etImageSwipeMin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="图文最小左右滑动次数"
+            android:inputType="number"
+            android:text="1" />
+
+        <EditText
+            android:id="@+id/etImageSwipeMax"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="图文最大左右滑动次数"
+            android:inputType="number"
+            android:text="8" />
+
+        <EditText
+            android:id="@+id/etTargetRegistrations"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="目标报名次数"
+            android:inputType="number"
+            android:text="40" />
+
+        <EditText
+            android:id="@+id/etMinPrice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="最低价格"
+            android:inputType="numberDecimal"
+            android:text="21" />
+
+        <EditText
+            android:id="@+id/etMaxPrice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="最高价格"
+            android:inputType="numberDecimal"
+            android:text="9999999" />
+
+        <EditText
+            android:id="@+id/etExcludedWords"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="排除词，用逗号分隔"
+            android:text="内定,复投,直接报名,订阅提醒,定制" />
+
+        <EditText
+            android:id="@+id/etSizeSpec"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="样品规格/尺码（可选）"
+            android:inputType="text" />
+
+        <EditText
+            android:id="@+id/etRefreshMin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="刷新最小秒数"
+            android:inputType="number"
+            android:text="2" />
+
+        <EditText
+            android:id="@+id/etRefreshMax"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="刷新最大秒数"
+            android:inputType="number"
+            android:text="10" />
+
+        <CheckBox
+            android:id="@+id/cbAutoConfirm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="自动点击最终确认报名（测试期建议关闭）" />
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="开始自动化" />
+
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="停止" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="说明：V1 只通过 Android 无障碍和公开 UI 操作，不绕过验证码/安全验证；检测到安全验证会自动停止。"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+</ScrollView>
