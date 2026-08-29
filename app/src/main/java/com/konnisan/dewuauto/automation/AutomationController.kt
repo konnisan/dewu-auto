@@ -44,6 +44,7 @@ class AutomationController(
     private var roundRestUntil = 0L
     private var notBeforeAt = 0L
     private var lastPokeAt = 0L
+    private var registrationPrimaryClicked = false
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -75,6 +76,7 @@ class AutomationController(
         roundRestUntil = 0L
         notBeforeAt = 0L
         lastPokeAt = 0L
+        registrationPrimaryClicked = false
         running = true
         enterState(AutomationState.VERIFYING_LICENSE, "验证卡密")
 
@@ -186,6 +188,7 @@ class AutomationController(
         if (elapsedInState() > 12_000L) {
             DewuLauncher.launch(service)
             touchAction("重新拉起得物")
+            stateEnteredAt = SystemClock.elapsedRealtime()
         }
     }
 
@@ -229,11 +232,14 @@ class AutomationController(
     }
 
     private fun handleWaitingBrandPage(root: AccessibilityNodeInfo?) {
-        if (!isBrandPage(root)) return
+        if (!isDewuRoot(root)) return
 
-        val sortVisible = NodeUtils.hasAnyText(root, DewuSelectors.SORT_ENTRY)
-        if (!sortVisible && NodeUtils.hasAnyText(root, DewuSelectors.MORE)) {
-            if (clickText(root, DewuSelectors.MORE, "点击商单查看更多")) return
+        if (!isBrandPage(root)) {
+            val hasBrandContext = NodeUtils.hasAnyText(root, DewuSelectors.BRAND_ENTRY)
+            if (hasBrandContext && NodeUtils.hasAnyText(root, DewuSelectors.MORE)) {
+                clickText(root, DewuSelectors.MORE, "点击商单查看更多")
+            }
+            return
         }
 
         sortMenuOpened = false
@@ -284,9 +290,9 @@ class AutomationController(
                 if (rect != null && rect.width() > 0) {
                     val y = rect.centerY().toFloat()
                     performSwipe(
-                        startX = (rect.right - rect.width() * 0.15f),
+                        startX = rect.right - rect.width() * 0.15f,
                         startY = y,
-                        endX = (rect.left + rect.width() * 0.15f),
+                        endX = rect.left + rect.width() * 0.15f,
                         endY = y,
                         durationMs = 420L,
                         label = "奖励类型区域左滑",
@@ -321,8 +327,9 @@ class AutomationController(
         val candidate = findEligibleRegisterNode(root)
         if (candidate != null) {
             val signature = taskSignature(candidate)
-            visitedTaskSignatures += signature
             if (NodeUtils.clickNode(candidate)) {
+                visitedTaskSignatures += signature
+                registrationPrimaryClicked = false
                 touchAction("打开符合条件的报名任务")
                 enterState(AutomationState.WAITING_REGISTRATION_PAGE, "等待报名页面")
             }
@@ -366,6 +373,19 @@ class AutomationController(
         if (config.sizeSpec.isNotBlank()) {
             NodeUtils.findFirstByTexts(root, listOf(config.sizeSpec))?.let {
                 if (NodeUtils.clickNode(it)) touchAction("选择规格：${config.sizeSpec}")
+            }
+        }
+
+        if (!registrationPrimaryClicked) {
+            val primary = NodeUtils.findFirstByTexts(root, DewuSelectors.REGISTER_BUTTONS)
+            val primaryLabel = primary?.text?.toString()?.trim().orEmpty().ifBlank {
+                primary?.contentDescription?.toString()?.trim().orEmpty()
+            }
+            if (primary != null && primaryLabel in DewuSelectors.REGISTER_BUTTONS && NodeUtils.clickNode(primary)) {
+                registrationPrimaryClicked = true
+                touchAction("点击报名主按钮")
+                stateEnteredAt = SystemClock.elapsedRealtime()
+                return
             }
         }
 
@@ -425,6 +445,8 @@ class AutomationController(
 
     private fun onRegistrationSuccess() {
         runtime.registrationCount++
+        runtime.listScrollCount = 0
+        registrationPrimaryClicked = false
         log("报名成功：${runtime.registrationCount}/${config.targetRegistrationCount}")
         if (runtime.registrationCount >= config.targetRegistrationCount) {
             finish("达到目标报名次数 ${config.targetRegistrationCount}")
@@ -549,9 +571,7 @@ class AutomationController(
 
             val price = extractPrice(contextText)
             if (price != null && price !in config.minPrice..config.maxPrice) continue
-            if (price == null && (config.minPrice > 0.0 || config.maxPrice < 9_999_999.0)) {
-                continue
-            }
+            if (price == null && (config.minPrice > 0.0 || config.maxPrice < 9_999_999.0)) continue
             return node
         }
         return null
