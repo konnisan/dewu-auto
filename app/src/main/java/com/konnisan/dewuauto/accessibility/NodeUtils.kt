@@ -4,6 +4,7 @@ import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import com.konnisan.dewuauto.automation.DewuSelectors
 import java.util.ArrayDeque
+import java.util.LinkedHashMap
 
 object NodeUtils {
     fun findFirstByTexts(
@@ -47,13 +48,18 @@ object NodeUtils {
     fun findAllByTexts(root: AccessibilityNodeInfo?, texts: Collection<String>): List<AccessibilityNodeInfo> {
         if (root == null) return emptyList()
         val normalized = texts.map { it.trim() }.filter { it.isNotEmpty() }
-        return findAll(root) { node ->
+        val matches = findAll(root) { node ->
             val value = node.text?.toString()?.trim().orEmpty()
             val desc = node.contentDescription?.toString()?.trim().orEmpty()
             normalized.any {
                 it == value || it == desc || value.contains(it, ignoreCase = true) || desc.contains(it, ignoreCase = true)
             }
         }
+
+        // React Native/部分 Android 实现可能把同一个可见文字节点以多个 AccessibilityNodeInfo
+        // 引用暴露出来。真机上“查看更多”就出现过这种情况。按标签+实时屏幕边界去重，
+        // 避免把一个按钮误判成多个不同入口；不使用厂商、分辨率或固定坐标特判。
+        return deduplicateByVisibleBounds(matches)
     }
 
     fun findAll(
@@ -70,7 +76,18 @@ object NodeUtils {
     }
 
     fun clickNode(node: AccessibilityNodeInfo?): Boolean {
-        var current = node
+        if (node == null) return false
+
+        val label = node.text?.toString()?.trim().orEmpty().ifBlank {
+            node.contentDescription?.toString()?.trim().orEmpty()
+        }
+
+        // 真机验证表明：React Native 的“查看更多”文字节点向上寻找 clickable 父容器时，
+        // 可能命中过大的模块容器并触发旁边/其它模块。这里明确不沿父节点 ACTION_CLICK，
+        // 让控制器使用该精确文字节点的实时 bounds 中心 dispatchGesture 点击。
+        if (label in DewuSelectors.MORE) return false
+
+        var current: AccessibilityNodeInfo? = node
         repeat(7) {
             if (current == null) return false
             if (current!!.isClickable && current!!.isEnabled) {
@@ -132,6 +149,24 @@ object NodeUtils {
         findFirstByTexts(root, texts) != null
 
     fun dumpVisibleText(root: AccessibilityNodeInfo?, maxNodes: Int = 250): String = collectText(root, maxNodes)
+
+    private fun deduplicateByVisibleBounds(nodes: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {
+        if (nodes.size <= 1) return nodes
+        val unique = LinkedHashMap<String, AccessibilityNodeInfo>()
+        for (node in nodes) {
+            val value = node.text?.toString()?.trim().orEmpty()
+            val desc = node.contentDescription?.toString()?.trim().orEmpty()
+            val rect = bounds(node)
+            val key = if (rect != null && rect.width() > 0 && rect.height() > 0) {
+                "$value|$desc|${rect.left},${rect.top},${rect.right},${rect.bottom}"
+            } else {
+                // 无有效边界时不激进合并，避免把真正不同但同名的不可见节点折叠掉。
+                "$value|$desc|node:${System.identityHashCode(node)}"
+            }
+            unique.putIfAbsent(key, node)
+        }
+        return unique.values.toList()
+    }
 
     private fun nearestAncestorContextDistance(
         node: AccessibilityNodeInfo?,
