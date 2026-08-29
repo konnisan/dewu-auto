@@ -3,7 +3,9 @@ package com.konnisan.dewuauto.automation
 object DewuSelectors {
     const val PACKAGE_NAME = "com.shizhuang.duapp"
 
-    val HOME_MARKERS = listOf("首页")
+    // 不同得物版本的首页不一定暴露“首页”文本。
+    // isHome() 还会同时要求“我/我的”入口存在，因此这里允许多个稳定首页特征。
+    val HOME_MARKERS = listOf("首页", "购买", "探索", "推荐", "关注")
     val PROFILE_TAB = listOf("我", "我的")
     val PROFILE_MARKERS = listOf("个人中心", "我的", "商单", "品牌合作")
     val BRAND_ENTRY = listOf("商单", "品牌合作")
