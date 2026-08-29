@@ -12,6 +12,7 @@ import com.konnisan.dewuauto.accessibility.NodeUtils
 import com.konnisan.dewuauto.config.AutomationConfig
 import com.konnisan.dewuauto.license.LicenseManager
 import com.konnisan.dewuauto.util.ScreenInfo
+import kotlin.math.abs
 
 class AutomationController(
     private val service: AccessibilityService,
@@ -22,6 +23,7 @@ class AutomationController(
         private const val MAX_ACTIONS_PER_RUN = 500
         private const val HOME_DIAGNOSTIC_INTERVAL_MS = 5_000L
         private const val PAGE_TIMEOUT_MS = 20_000L
+        private const val BRAND_DIAGNOSTIC_INTERVAL_MS = 3_000L
         private const val MAX_RECENT_RESULTS = 4
         private val TASK_CAPACITY_PATTERN = Regex("(?:(?:已)?报名[：:]?\\s*)?\\d+\\s*/\\s*\\d+\\s*人")
     }
@@ -41,6 +43,7 @@ class AutomationController(
     private var notBeforeAt = 0L
     private var lastPokeAt = 0L
     private var lastHomeDiagnosticAt = 0L
+    private var lastBrandDiagnosticAt = 0L
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -73,6 +76,7 @@ class AutomationController(
         notBeforeAt = 0L
         lastPokeAt = 0L
         lastHomeDiagnosticAt = 0L
+        lastBrandDiagnosticAt = 0L
         running = true
         enterState(AutomationState.VERIFYING_LICENSE, "验证卡密")
 
@@ -153,7 +157,10 @@ class AutomationController(
                 touchAction("从任务详情安全返回")
                 stateEnteredAt = SystemClock.elapsedRealtime()
             }
-            isProfile(root) -> enterState(AutomationState.OPENING_BRAND_COOPERATION, "已在个人/创作中心")
+            isProfile(root) -> {
+                brandEntryStep = if (NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) 1 else 0
+                enterState(AutomationState.OPENING_BRAND_COOPERATION, "已在个人/创作中心")
+            }
             isHome(root) -> enterState(AutomationState.OPENING_PROFILE, "检测到首页，准备进入个人中心")
             else -> {
                 val now = SystemClock.elapsedRealtime()
@@ -189,11 +196,16 @@ class AutomationController(
             return
         }
         if (!isProfile(root)) {
-            if (elapsedInState() > PAGE_TIMEOUT_MS) fail("未识别到个人中心")
+            if (elapsedInState() > PAGE_TIMEOUT_MS) {
+                diagnoseBrandNavigation(root, "WAITING_PROFILE_TIMEOUT")
+                fail("未识别到个人中心")
+            }
             return
         }
-        brandEntryStep = 0
-        enterState(AutomationState.OPENING_BRAND_COOPERATION, "进入创作中心")
+
+        brandEntryStep = if (NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) 1 else 0
+        lastBrandDiagnosticAt = 0L
+        enterState(AutomationState.OPENING_BRAND_COOPERATION, "进入创作中心并定位品牌合作")
     }
 
     private fun handleOpenBrand(root: AccessibilityNodeInfo?) {
@@ -203,56 +215,85 @@ class AutomationController(
         }
         if (!isDewuRoot(root)) return
 
+        // 第一步：在“我的”页进入创作中心。
+        // 如果当前已经能看到“品牌合作/商单”，说明已经位于创作中心，不重复点击标题。
         if (brandEntryStep == 0) {
-            val creationCenter = NodeUtils.findFirstByTexts(root, DewuSelectors.CREATION_CENTER)
-            if (NodeUtils.clickNode(creationCenter)) {
+            if (NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) {
                 brandEntryStep = 1
-                touchAction("点击创作中心")
                 stateEnteredAt = SystemClock.elapsedRealtime()
-                return
+            } else {
+                val creationCenter = NodeUtils.findFirstByTexts(root, DewuSelectors.CREATION_CENTER)
+                if (NodeUtils.clickNode(creationCenter)) {
+                    brandEntryStep = 1
+                    touchAction("点击创作中心")
+                    notBeforeAt = SystemClock.elapsedRealtime() + 1_000L
+                    stateEnteredAt = SystemClock.elapsedRealtime()
+                    return
+                }
             }
-            brandEntryStep = 1
         }
 
-        if (clickTaskPreviewMore(root)) {
-            enterState(AutomationState.WAITING_BRAND_PAGE, "等待品牌合作页面")
+        // 第二步：只点击“品牌合作”区域对应的“查看更多”。
+        // 页面上可能同时有多个查看更多，绝不使用“第一个查看更多”作为兜底。
+        if (brandEntryStep >= 1 && clickBrandCooperationMore(root)) {
+            brandEntryStep = 2
+            enterState(AutomationState.WAITING_BRAND_PAGE, "等待品牌合作任务列表")
             return
         }
 
-        if (elapsedInState() > PAGE_TIMEOUT_MS) fail("未找到创作中心的玩转收益入口")
+        diagnoseBrandNavigationPeriodically(root, "OPENING_BRAND")
+        if (elapsedInState() > PAGE_TIMEOUT_MS) {
+            diagnoseBrandNavigation(root, "OPENING_BRAND_TIMEOUT")
+            fail("未找到创作中心内“品牌合作”的查看更多")
+        }
     }
 
     private fun handleWaitingBrandPage(root: AccessibilityNodeInfo?) {
         if (!isDewuRoot(root)) return
+
+        if (isBrandPage(root)) {
+            runtime.requiresCreatorEnrollment = NodeUtils.hasAnyText(root, DewuSelectors.APPLY_TO_JOIN)
+            wrongMoreRecoveryCount = 0
+            sortMenuOpened = false
+            enterState(AutomationState.APPLYING_INITIAL_SORT, "设置排序：${config.sortMode}")
+            return
+        }
+
         if (NodeUtils.hasAnyText(root, DewuSelectors.WRONG_MORE_PAGE_MARKERS)) {
             if (wrongMoreRecoveryCount >= 1) {
-                fail("玩转收益入口连续进入错误页面，已安全停止")
+                diagnoseBrandNavigation(root, "WRONG_MORE_REPEAT")
+                fail("连续进入了非品牌合作页面，已安全停止")
                 return
             }
             wrongMoreRecoveryCount++
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             touchAction("误入其它查看更多页面，安全返回")
             brandEntryStep = 1
-            enterState(AutomationState.OPENING_BRAND_COOPERATION, "重新定位玩转收益任务预览")
-            return
-        }
-        if (!isBrandPage(root)) {
-            clickTaskPreviewMore(root)
-            if (elapsedInState() > PAGE_TIMEOUT_MS) {
-                runtime.requiresCreatorEnrollment = NodeUtils.hasAnyText(root, DewuSelectors.APPLY_TO_JOIN)
-                val reason = if (runtime.requiresCreatorEnrollment) {
-                    "当前账号仅显示申请入驻，已安全停止"
-                } else {
-                    "未识别到品牌合作页面"
-                }
-                finish(reason)
-            }
+            notBeforeAt = SystemClock.elapsedRealtime() + 1_000L
+            enterState(AutomationState.OPENING_BRAND_COOPERATION, "返回创作中心，重新定位品牌合作")
             return
         }
 
-        runtime.requiresCreatorEnrollment = NodeUtils.hasAnyText(root, DewuSelectors.APPLY_TO_JOIN)
-        sortMenuOpened = false
-        enterState(AutomationState.APPLYING_INITIAL_SORT, "设置排序：${config.sortMode}")
+        // 如果点击没有触发页面跳转，只允许重新尝试品牌合作上下文中的按钮。
+        // 不再像旧实现一样反复点击任意“查看更多”。
+        if (elapsedInState() > 2_000L && NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) {
+            if (clickBrandCooperationMore(root)) {
+                stateEnteredAt = SystemClock.elapsedRealtime()
+                return
+            }
+        }
+
+        diagnoseBrandNavigationPeriodically(root, "WAITING_BRAND_PAGE")
+        if (elapsedInState() > PAGE_TIMEOUT_MS) {
+            runtime.requiresCreatorEnrollment = NodeUtils.hasAnyText(root, DewuSelectors.APPLY_TO_JOIN)
+            diagnoseBrandNavigation(root, "WAITING_BRAND_TIMEOUT")
+            val reason = if (runtime.requiresCreatorEnrollment) {
+                "当前账号仅显示申请入驻，已安全停止"
+            } else {
+                "点击品牌合作查看更多后，未识别到品牌合作任务列表"
+            }
+            finish(reason)
+        }
     }
 
     private fun handleSort(root: AccessibilityNodeInfo?) {
@@ -334,6 +375,7 @@ class AutomationController(
     }
 
     private fun scanVisibleTasks(root: AccessibilityNodeInfo): List<PreviewTaskResult> {
+        // 这里读取“报名/立即报名”文字只是为了定位任务卡片，绝不会点击这些节点。
         val registerNodes = NodeUtils.findAllByTexts(root, DewuSelectors.REGISTER_BUTTONS)
             .filter { nodeLabel(it) in DewuSelectors.REGISTER_BUTTONS }
         val capacityNodes = NodeUtils.findAll(root) { node ->
@@ -432,6 +474,7 @@ class AutomationController(
     private fun isProfile(root: AccessibilityNodeInfo?): Boolean =
         isDewuRoot(root) && (
             NodeUtils.hasAnyText(root, DewuSelectors.CREATION_CENTER) ||
+                NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT) ||
                 (NodeUtils.hasAnyText(root, DewuSelectors.PROFILE_MARKERS) &&
                     NodeUtils.hasAnyText(root, DewuSelectors.MORE))
             )
@@ -455,37 +498,139 @@ class AutomationController(
         return true
     }
 
-    private fun clickTaskPreviewMore(root: AccessibilityNodeInfo?): Boolean {
-        val exactCandidates = NodeUtils.findAllByTexts(root, DewuSelectors.MORE)
+    /**
+     * 创作中心可能同时存在多个“查看更多”。
+     * 优先规则：
+     * 1. “查看更多”的祖先容器文本里明确包含“品牌合作/商单”；
+     * 2. React Native 把标题和按钮拆成兄弟节点时，按屏幕坐标选择距离“品牌合作”最近的查看更多；
+     * 3. 只有页面同时存在品牌合作，并且全页只有一个查看更多时，才允许唯一按钮兜底。
+     *
+     * 永远不会因为找不到品牌上下文而点击页面第一个查看更多。
+     */
+    private fun clickBrandCooperationMore(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+
+        val brandNodes = NodeUtils.findAllByTexts(root, DewuSelectors.BRAND_CONTEXT)
+            .filter { node ->
+                val label = nodeLabel(node)
+                DewuSelectors.BRAND_CONTEXT.any { context ->
+                    label.equals(context, ignoreCase = true) || label.contains(context, ignoreCase = true)
+                }
+            }
+        val moreNodes = NodeUtils.findAllByTexts(root, DewuSelectors.MORE)
             .filter { nodeLabel(it) in DewuSelectors.MORE }
-        val contextualCandidate = exactCandidates.firstOrNull { node ->
-            val context = NodeUtils.ancestorText(node, levels = 7)
-            val hasTaskPreview =
-                context.contains("现金奖励") &&
-                    context.contains("已报名") &&
-                    context.contains("报名")
-            hasTaskPreview
-        }
-        // React Native 的无障碍树偶尔会为同一个文字节点暴露重复引用；此处只接受
-        // 文案完全等于“查看更多”的可见节点，再由错误页面检测负责安全回退。
-        val candidate = sequenceOf(contextualCandidate)
-            .filterNotNull()
-            .plus(exactCandidates.asSequence())
-            .distinct()
-            .firstOrNull { node ->
+            .filter { node ->
                 val rect = NodeUtils.bounds(node)
                 rect != null && rect.width() > 0 && rect.height() > 0
             }
-            ?: return false
 
+        if (brandNodes.isEmpty() || moreNodes.isEmpty()) return false
+
+        val ancestorCandidate = moreNodes.firstOrNull { node ->
+            val context = NodeUtils.ancestorText(node, levels = 8)
+            DewuSelectors.BRAND_CONTEXT.any { context.contains(it, ignoreCase = true) }
+        }
+
+        val geometryCandidate = if (ancestorCandidate == null) {
+            findNearestBrandMoreByGeometry(brandNodes, moreNodes)
+        } else {
+            null
+        }
+
+        val uniqueCandidate = if (ancestorCandidate == null && geometryCandidate == null && moreNodes.size == 1) {
+            moreNodes.first()
+        } else {
+            null
+        }
+
+        val candidate = ancestorCandidate ?: geometryCandidate ?: uniqueCandidate ?: return false
         val bounds = NodeUtils.bounds(candidate) ?: return false
+
+        val method = when (candidate) {
+            ancestorCandidate -> "祖先上下文"
+            geometryCandidate -> "屏幕邻近"
+            else -> "唯一按钮"
+        }
+        log(
+            "BRAND_MORE matched=$method bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} " +
+                "brandCount=${brandNodes.size} moreCount=${moreNodes.size}",
+        )
+
+        if (NodeUtils.clickNode(candidate)) {
+            touchAction("点击品牌合作查看更多($method)")
+            notBeforeAt = SystemClock.elapsedRealtime() + 1_500L
+            return true
+        }
+
         val tapped = performTap(
             x = bounds.centerX().toFloat(),
             y = bounds.centerY().toFloat(),
-            label = "点击玩转收益任务预览查看更多",
+            label = "点击品牌合作查看更多($method/坐标)",
         )
         if (tapped) notBeforeAt = SystemClock.elapsedRealtime() + 1_500L
         return tapped
+    }
+
+    private fun findNearestBrandMoreByGeometry(
+        brandNodes: List<AccessibilityNodeInfo>,
+        moreNodes: List<AccessibilityNodeInfo>,
+    ): AccessibilityNodeInfo? {
+        val screen = ScreenInfo.from(service)
+        val maxVerticalDistance = (screen.heightPx * 0.32f).toInt().coerceAtLeast(240)
+
+        var bestNode: AccessibilityNodeInfo? = null
+        var bestScore = Int.MAX_VALUE
+
+        for (brandNode in brandNodes) {
+            val brandRect = NodeUtils.bounds(brandNode) ?: continue
+            if (brandRect.width() <= 0 || brandRect.height() <= 0) continue
+
+            for (moreNode in moreNodes) {
+                val moreRect = NodeUtils.bounds(moreNode) ?: continue
+                val verticalDistance = abs(moreRect.centerY() - brandRect.centerY())
+                if (verticalDistance > maxVerticalDistance) continue
+
+                // 品牌合作标题通常在卡片左侧/上方，查看更多通常在右侧或同一模块下方。
+                // 对明显位于品牌标题左侧、且离得较远的按钮增加惩罚，避免跨模块误匹配。
+                val leftPenalty = if (moreRect.centerX() + moreRect.width() < brandRect.centerX()) 500 else 0
+                val abovePenalty = if (moreRect.centerY() < brandRect.top - 120) 350 else 0
+                val horizontalDistance = abs(moreRect.centerX() - brandRect.centerX()) / 4
+                val score = verticalDistance + horizontalDistance + leftPenalty + abovePenalty
+
+                if (score < bestScore) {
+                    bestScore = score
+                    bestNode = moreNode
+                }
+            }
+        }
+
+        return bestNode
+    }
+
+    private fun diagnoseBrandNavigationPeriodically(root: AccessibilityNodeInfo?, stage: String) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastBrandDiagnosticAt < BRAND_DIAGNOSTIC_INTERVAL_MS) return
+        lastBrandDiagnosticAt = now
+        diagnoseBrandNavigation(root, stage)
+    }
+
+    private fun diagnoseBrandNavigation(root: AccessibilityNodeInfo?, stage: String) {
+        val packageName = root?.packageName?.toString().orEmpty().ifBlank { "<none>" }
+        val brandNodes = NodeUtils.findAllByTexts(root, DewuSelectors.BRAND_CONTEXT)
+        val moreNodes = NodeUtils.findAllByTexts(root, DewuSelectors.MORE)
+        val brandBounds = brandNodes.take(6).joinToString(";") { node ->
+            NodeUtils.bounds(node)?.let { r -> "${nodeLabel(node)}@${r.left},${r.top},${r.right},${r.bottom}" }
+                ?: "${nodeLabel(node)}@?"
+        }
+        val moreBounds = moreNodes.take(10).joinToString(";") { node ->
+            NodeUtils.bounds(node)?.let { r -> "${nodeLabel(node)}@${r.left},${r.top},${r.right},${r.bottom}" }
+                ?: "${nodeLabel(node)}@?"
+        }
+        val visible = NodeUtils.dumpVisibleText(root, 220).take(1_600)
+        log(
+            "BRAND_NAV stage=$stage package=$packageName step=$brandEntryStep " +
+                "brand=[$brandBounds] more=[$moreBounds] visible=$visible",
+        )
     }
 
     private fun performVerticalSwipe(up: Boolean, label: String): Boolean {
