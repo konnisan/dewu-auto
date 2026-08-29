@@ -25,6 +25,7 @@ class AutomationController(
         private const val MAX_ACTIONS_PER_RUN = 2_500
         private const val REGISTER_RESULT_TIMEOUT_MS = 15_000L
         private const val MAX_BACK_TO_HOME = 8
+        private const val HOME_DIAGNOSTIC_INTERVAL_MS = 5_000L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -44,6 +45,7 @@ class AutomationController(
     private var roundRestUntil = 0L
     private var notBeforeAt = 0L
     private var lastPokeAt = 0L
+    private var lastHomeDiagnosticAt = 0L
     private var registrationPrimaryClicked = false
 
     private val ticker = object : Runnable {
@@ -76,6 +78,7 @@ class AutomationController(
         roundRestUntil = 0L
         notBeforeAt = 0L
         lastPokeAt = 0L
+        lastHomeDiagnosticAt = 0L
         registrationPrimaryClicked = false
         running = true
         enterState(AutomationState.VERIFYING_LICENSE, "验证卡密")
@@ -86,19 +89,8 @@ class AutomationController(
                 licenseManager.startHeartbeat { reason ->
                     if (running) fail("卡密心跳失败: $reason")
                 }
-                enterState(AutomationState.SOFT_RESETTING_DEWU, "软重置得物")
-                softResetDewu()
-                handler.postDelayed({
-                    if (running) {
-                        enterState(AutomationState.LAUNCHING_DEWU, "启动得物")
-                        if (!DewuLauncher.launch(service)) {
-                            fail("未找到得物，确认已安装 com.shizhuang.duapp")
-                        } else {
-                            enterState(AutomationState.WAITING_HOME, "等待得物首页")
-                            poke()
-                        }
-                    }
-                }, 1_200L)
+                enterState(AutomationState.WAITING_HOME, "等待前台得物首页")
+                poke()
             }.onFailure { fail("卡密验证失败: ${it.message}") }
         }
 
@@ -185,9 +177,18 @@ class AutomationController(
             )
             return
         }
-        if (elapsedInState() > 12_000L) {
+
+        val now = SystemClock.elapsedRealtime()
+        if (elapsedInState() > 2_000L && now - lastHomeDiagnosticAt >= HOME_DIAGNOSTIC_INTERVAL_MS) {
+            lastHomeDiagnosticAt = now
+            val packageName = root?.packageName?.toString().orEmpty().ifBlank { "<none>" }
+            val visibleText = NodeUtils.dumpVisibleText(root, 180).take(1_200)
+            log("WAITING_HOME package=$packageName | visible=$visibleText")
+        }
+
+        if (elapsedInState() > 12_000L && !isDewuRoot(root)) {
             DewuLauncher.launch(service)
-            touchAction("重新拉起得物")
+            touchAction("得物未在前台，尝试重新拉起")
             stateEnteredAt = SystemClock.elapsedRealtime()
         }
     }
@@ -700,12 +701,6 @@ class AutomationController(
         val dispatched = service.dispatchGesture(gesture, null, null)
         if (dispatched) touchAction(label)
         return dispatched
-    }
-
-    private fun softResetDewu() {
-        repeat(3) { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) }
-        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-        touchAction("得物软重置（非 force-stop）")
     }
 
     private fun enterState(state: AutomationState, message: String) {
