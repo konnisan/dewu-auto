@@ -2,6 +2,7 @@ package com.konnisan.dewuauto.accessibility
 
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
+import com.konnisan.dewuauto.automation.DewuSelectors
 import java.util.ArrayDeque
 
 object NodeUtils {
@@ -13,6 +14,20 @@ object NodeUtils {
         if (root == null) return null
         val normalized = texts.map { it.trim() }.filter { it.isNotEmpty() }
         if (normalized.isEmpty()) return null
+
+        // “查看更多”在创作中心可能出现多次。优先选择离“品牌合作/商单”上下文最近的按钮，
+        // 避免误点其它模块的“查看更多”。若无法确认上下文，再退回普通查找。
+        if (normalized.any { it in DewuSelectors.MORE }) {
+            val candidates = findAllByTexts(root, normalized)
+            val contextual = candidates
+                .mapNotNull { node ->
+                    nearestAncestorContextDistance(node, DewuSelectors.BRAND_CONTEXT, maxLevels = 6)
+                        ?.let { distance -> node to distance }
+                }
+                .minByOrNull { it.second }
+                ?.first
+            if (contextual != null) return contextual
+        }
 
         if (exactPreferred) {
             breadthFirst(root) { node ->
@@ -95,6 +110,21 @@ object NodeUtils {
         findFirstByTexts(root, texts) != null
 
     fun dumpVisibleText(root: AccessibilityNodeInfo?, maxNodes: Int = 250): String = collectText(root, maxNodes)
+
+    private fun nearestAncestorContextDistance(
+        node: AccessibilityNodeInfo?,
+        contextTexts: Collection<String>,
+        maxLevels: Int,
+    ): Int? {
+        var current = node?.parent
+        for (level in 1..maxLevels.coerceAtLeast(1)) {
+            val ancestor = current ?: break
+            val context = collectText(ancestor, 60)
+            if (contextTexts.any { context.contains(it, ignoreCase = true) }) return level
+            current = ancestor.parent
+        }
+        return null
+    }
 
     private fun breadthFirst(
         root: AccessibilityNodeInfo,
