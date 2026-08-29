@@ -23,3 +23,9 @@ jobs:
           gradle-version: "8.13"
       - name: Assemble debug APK
         run: gradle :app:assembleDebug --stacktrace
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dewu-auto-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
