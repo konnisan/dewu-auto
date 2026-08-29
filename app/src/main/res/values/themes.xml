@@ -1,0 +1,10 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.DewuAuto" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="colorPrimary">#222222</item>
+        <item name="colorPrimaryVariant">#111111</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#666666</item>
+    </style>
+</resources>
