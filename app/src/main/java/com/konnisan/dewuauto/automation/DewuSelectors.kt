@@ -7,8 +7,13 @@ object DewuSelectors {
     // isHome() 还会同时要求“我/我的”入口存在，因此这里允许多个稳定首页特征。
     val HOME_MARKERS = listOf("首页", "购买", "探索", "推荐", "关注")
     val PROFILE_TAB = listOf("我", "我的")
-    val PROFILE_MARKERS = listOf("个人中心", "我的", "商单", "品牌合作")
-    val BRAND_ENTRY = listOf("商单", "品牌合作")
+
+    // 当前得物路径：我的 → 创作中心 → 品牌合作区域 → 查看更多。
+    // 同时保留旧版“商单/品牌合作”直接入口，兼容不同得物版本。
+    val PROFILE_MARKERS = listOf("个人中心", "我的", "创作中心", "商单", "品牌合作")
+    val CREATION_CENTER = listOf("创作中心")
+    val BRAND_ENTRY = listOf("品牌合作", "商单", "创作中心")
+    val BRAND_CONTEXT = listOf("品牌合作", "商单")
     val BRAND_PAGE_MARKERS = listOf("综合排序", "奖励类型", "产品类目", "商单", "品牌合作")
     val MORE = listOf("查看更多")
 
