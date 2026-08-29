@@ -104,7 +104,14 @@ class MainActivity : AppCompatActivity() {
 
         val config = readConfig().normalized()
         prefs.save(config)
+
         service.startAutomation(config)
+        if (!DewuLauncher.launch(this)) {
+            service.stopAutomation()
+            toast("未检测到得物，请确认已安装")
+            return
+        }
+
         toast("自动化已启动")
     }
 
