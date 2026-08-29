@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">得物自动报名 V1</string>
+    <string name="accessibility_service_label">得物自动报名服务</string>
+    <string name="accessibility_service_description">用于在用户明确启动任务后，根据配置操作得物页面。遇到安全验证时自动暂停。</string>
+</resources>
