@@ -17,35 +17,35 @@ class AutomationPrefs(context: Context) {
             .putInt("restMaxMinutes", c.restMaxMinutes)
             .putInt("imageSwipeMin", c.imageSwipeMin)
             .putInt("imageSwipeMax", c.imageSwipeMax)
-            .putInt("targetRegistrationCount", c.targetRegistrationCount)
             .putString("minPrice", c.minPrice.toString())
             .putString("maxPrice", c.maxPrice.toString())
             .putString("excludedWords", c.excludedWords.joinToString(","))
             .putString("sizeSpec", c.sizeSpec)
             .putInt("refreshMinSeconds", c.refreshMinSeconds)
             .putInt("refreshMaxSeconds", c.refreshMaxSeconds)
-            .putBoolean("autoConfirmRegistration", c.autoConfirmRegistration)
             .apply()
     }
 
     fun load(): AutomationConfig = AutomationConfig(
         cardKey = prefs.getString("cardKey", "").orEmpty(),
         productCategory = prefs.getString("productCategory", "服装") ?: "服装",
-        sortMode = prefs.getString("sortMode", "默认排序") ?: "默认排序",
+        sortMode = prefs.getString("sortMode", "最近发布")
+            ?.takeUnless { it == "默认排序" }
+            ?: "最近发布",
         maxListScrolls = prefs.getInt("maxListScrolls", 5),
         homeBrowseCount = prefs.getInt("homeBrowseCount", 1),
         restMinMinutes = prefs.getInt("restMinMinutes", 5),
         restMaxMinutes = prefs.getInt("restMaxMinutes", 10),
         imageSwipeMin = prefs.getInt("imageSwipeMin", 1),
         imageSwipeMax = prefs.getInt("imageSwipeMax", 8),
-        targetRegistrationCount = prefs.getInt("targetRegistrationCount", 40),
         minPrice = prefs.getString("minPrice", "21")?.toDoubleOrNull() ?: 21.0,
         maxPrice = prefs.getString("maxPrice", "9999999")?.toDoubleOrNull() ?: 9_999_999.0,
         excludedWords = prefs.getString("excludedWords", "内定,复投,直接报名,订阅提醒,定制")
-            .orEmpty().split(",", "，").map { it.trim() }.filter { it.isNotEmpty() },
+            .orEmpty().split(Regex("(?:##|[,，、;；\\s]+)"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() },
         sizeSpec = prefs.getString("sizeSpec", "").orEmpty(),
         refreshMinSeconds = prefs.getInt("refreshMinSeconds", 2),
         refreshMaxSeconds = prefs.getInt("refreshMaxSeconds", 10),
-        autoConfirmRegistration = prefs.getBoolean("autoConfirmRegistration", false),
     ).normalized()
 }

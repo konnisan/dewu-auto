@@ -2,9 +2,11 @@
     <style name="Theme.DewuAuto" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="colorPrimary">#222222</item>
-        <item name="colorPrimaryVariant">#111111</item>
+        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="colorPrimary">#079CA3</item>
+        <item name="colorPrimaryVariant">#067F85</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#666666</item>
+        <item name="colorSecondary">#079CA3</item>
     </style>
 </resources>

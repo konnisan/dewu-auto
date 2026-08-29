@@ -1,99 +1,48 @@
-# dewu-auto
+# 得物任务筛选预演
 
-Android 无障碍版自动报名 V1。项目目标是把已有 Lua/自动化 APK 的思路重新实现为可维护的 Kotlin Android 工程，不复制第三方 APK 的受保护源码。
+这是一个 Kotlin + Android Views 实现的无障碍辅助工具，用于进入得物的品牌合作任务列表、解析当前可见任务，并按奖励、关键词、样品规格和名额进行本地筛选。
 
-## 当前 V1 流程
+当前版本是**只读预演**：不会点击“报名”“立即报名”或“申请入驻”，也不会提交任何合作申请。项目参考了同目录 APK 的公开界面和运行流程，但没有复制其受保护源码。
 
-对应当前需求：
+## 当前流程
 
-1. 读取 UI 参数并持久化。
-2. 检测 AccessibilityService。
-3. 读取屏幕分辨率。
-4. 卡密验证 + 心跳：已提供接口与 HTTP 实现；Debug 在未配置服务端时使用本地开发验证。
-5. 得物软重置。普通第三方 Android App 无权 `force-stop` 得物，因此使用 Back/Home 后重新拉起，不伪装成真正杀进程。
-6. 通过 `com.shizhuang.duapp` 启动得物。
-7. 检测首页。
-8. 点击“我/我的”。
-9. 检测个人中心。
-10. 点击“商单/品牌合作”；兼容品牌合作卡片的“查看更多”。
-11. 检测商单页面。
-12. 首轮排序切到“最近发布”。
-13. 左滑筛选栏 → 产品类目 → 选择 UI 类目。
-14. 扫描当前页“报名/立即报名”任务。
-15. 根据 UI 下滑次数继续扫描。
-16. 达到阈值后切换到 UI 设置的排序方式。
-17. 清零下滑计数继续扫描。
-18. 报名成功后继续下滑找任务。
-19. 一轮完成后返回首页。
-20. 根据 UI 数量随机打开首页作品；0 跳过。
-21. 图文按 UI 范围左右滑动，视频/未知作品随机停留。
-22. Back 返回首页。
-23. 再次进入“我 → 商单”。
-24. 重新执行筛选和扫描。
-25. 达到目标报名次数后停止。
+1. 读取并保存筛选条件。
+2. 检查无障碍服务和屏幕信息。
+3. 启动得物，依次识别“我 → 创作中心 → 玩转收益 → 查看更多 → 品牌合作”。
+4. 选择排序方式与产品类目。
+5. 从当前任务卡读取标题、奖励、报名人数、名额和截止信息。
+6. 排除名额已满、已截止、命中排除词、奖励不在区间或样品规格不匹配的任务。
+7. 在本应用中展示扫描数、符合数、排除数和最近结果。
+8. 达到设置的列表下滑次数后结束预演。
 
-遇到“验证码 / 安全验证 / 人机验证 / 滑块验证”等页面会停止自动化，不实现验证码绕过、直接接口报名、多账号批量或风控规避。
+账号未入驻时，页面底部可能显示“申请入驻”。程序只记录这一状态，不点击该入口。检测到验证码、人机验证、滑块验证等安全页面时也会停止。
 
-## 开发环境
+## 关键文件
 
-- Android Studio Quail 3 (2026.1.3)
-- AGP 8.12.2
-- Gradle 8.13
-- JDK 17
-- compileSdk 36
-- targetSdk 35
-- minSdk 26
+- `app/src/main/java/com/konnisan/dewuauto/automation/AutomationController.kt`：只读导航与扫描状态机
+- `app/src/main/java/com/konnisan/dewuauto/automation/TaskCardParser.kt`：任务卡字段解析
+- `app/src/main/java/com/konnisan/dewuauto/automation/TaskEligibilityEvaluator.kt`：筛选规则
+- `app/src/main/java/com/konnisan/dewuauto/automation/DewuSelectors.kt`：得物页面文字选择器
+- `preview/index.html`：可用 Playwright 打开的前端交互预览
+- `docs/superpowers/specs/2026-08-29-filter-preview-ui-design.md`：界面与安全边界设计
 
-Quail 3 支持该 AGP 版本。项目以传统 Views + Kotlin 实现，尽量减少依赖。
+## 构建与验证
 
-## 卡密服务
-
-`app/build.gradle.kts` 当前：
-
-```kotlin
-buildConfigField("String", "LICENSE_API_BASE_URL", "\"\"")
-```
-
-Debug 且地址为空时允许本地开发测试。正式版应填入 HTTPS 服务地址。默认约定：
-
-- `POST /verify`: `{ "cardKey": "...", "deviceId": "..." }`
-- 成功：`{ "ok": true, "sessionToken": "..." }`
-- `POST /heartbeat`: `{ "sessionToken": "...", "deviceId": "..." }`
-
-服务端协议确定后再按真实接口调整 `LicenseManager.kt`。
-
-## 真机调试重点
-
-V1 选择器集中在：
-
-`app/src/main/java/com/konnisan/dewuauto/automation/DewuSelectors.kt`
-
-得物属于动态 UI，当前文字选择器是按已知流程做的兼容层。第一次真机跑通前，建议在以下页面各导出一次 UI XML：
-
-- 首页
-- 我的/个人中心
-- 商单入口
-- 商单列表
-- 排序菜单
-- 产品类目菜单
-- 报名详情/确认页
-
-然后优先补充真实 `viewIdResourceName`，再把坐标兜底减少到最低。
-
-## 编译
-
-Android Studio Quail 3 直接打开仓库根目录，然后执行 **Build > Build APK(s)**。CI 使用 Gradle 8.13 执行：
-
-```text
-gradle :app:assembleDebug
-```
-
-Windows 如果已经把 Gradle 8.13 加入 PATH，也可以运行：
+环境：JDK 17、Android Gradle Plugin 8.12.2、Gradle 8.13、compileSdk 36、minSdk 26。
 
 ```bat
-build-debug.bat
+verify-filter.bat
+gradlew.bat assembleDebug --offline
 ```
 
-APK 输出：
+Debug APK 输出到：
 
 `app/build/outputs/apk/debug/app-debug.apk`
+
+前端预览可直接打开 `preview/index.html`。安装了 Playwright Node 模块时，可运行 `preview/check-preview.cjs` 验证交互状态及页面中不存在报名类按钮。
+
+## 真机适配说明
+
+得物使用动态 UI，不同账号和版本的可访问节点可能不同。当前已兼容 `已报名：16/20人` 和 `报名：9/40人` 两种人数格式，并同时支持独立报名文字节点和整张任务卡内容描述。若得物后续改版，优先更新 `DewuSelectors.kt` 和解析器测试样例。
+
+普通第三方 Android 应用不能真正强制停止得物；本项目仅通过系统返回、主页和重新拉起完成可恢复导航。它不绕过验证码、不调用私有报名接口、不做多账号批量操作，也不规避平台风控。

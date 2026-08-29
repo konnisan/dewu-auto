@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>得物任务筛选预览</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-bar">
+      <div>
+        <h1>得物任务筛选</h1>
+      </div>
+      <button class="icon-button" type="button" aria-label="更多选项">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.8"></circle>
+          <circle cx="12" cy="12" r="1.8"></circle>
+          <circle cx="12" cy="19" r="1.8"></circle>
+        </svg>
+      </button>
+    </header>
+
+    <section class="status-strip" aria-label="运行环境">
+      <div class="status-item status-ok">
+        <span class="status-dot"></span>
+        <span>无障碍</span>
+        <strong>已开启</strong>
+      </div>
+      <div class="divider"></div>
+      <div class="status-item">
+        <span>得物</span>
+        <strong>5.99.1</strong>
+      </div>
+    </section>
+
+    <section class="notice notice-safety">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2.8 20 6v5.5c0 5.1-3.4 8.3-8 9.7-4.6-1.4-8-4.6-8-9.7V6l8-3.2Z"></path>
+        <path d="M12 7v6"></path>
+        <circle cx="12" cy="16.4" r=".8"></circle>
+      </svg>
+      <div>
+        <strong>仅筛选预演，不执行报名</strong>
+        <span>所有报名与申请入驻入口均已禁用</span>
+      </div>
+    </section>
+
+    <section class="notice notice-account">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M12 10.4v5.7"></path>
+        <circle cx="12" cy="7.3" r=".8"></circle>
+      </svg>
+      <span>当前账号暂未具备达人资格，可继续预览筛选规则</span>
+    </section>
+
+    <form id="filterForm" class="content-section">
+      <div class="section-heading">
+        <div>
+          <h2>常用筛选</h2>
+          <p>用于判断任务是否符合要求</p>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="category">产品类目</label>
+        <select id="category">
+          <option selected>服装</option>
+          <option>美妆个护</option>
+          <option>3C数码</option>
+          <option>配件</option>
+          <option>箱包</option>
+          <option>手表</option>
+          <option>鞋</option>
+          <option>家居</option>
+          <option>食品饮料</option>
+          <option>其他</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="sort">排序方式</label>
+        <select id="sort">
+          <option>综合排序</option>
+          <option selected>最近发布</option>
+          <option>即将截止</option>
+          <option>默认排序</option>
+        </select>
+      </div>
+
+      <div class="form-row range-row">
+        <label>奖励范围</label>
+        <div class="range-fields">
+          <input aria-label="最低奖励" inputmode="decimal" value="21">
+          <span>至</span>
+          <input aria-label="最高奖励" inputmode="decimal" value="9999999">
+          <span>元</span>
+        </div>
+      </div>
+
+      <div class="form-row form-row-stacked">
+        <label for="excluded">排除词</label>
+        <input id="excluded" value="内定，复投，直接报名，订阅提醒，定制">
+        <small>支持逗号、中文逗号或 ## 分隔</small>
+      </div>
+
+      <div class="form-row form-row-stacked">
+        <label for="sizeSpec">样品规格</label>
+        <input id="sizeSpec" placeholder="例如：L码，42码">
+        <small>留空时不限制规格</small>
+      </div>
+    </form>
+
+    <section class="advanced-section">
+      <button id="advancedToggle" class="advanced-toggle" type="button" aria-expanded="false" aria-controls="advancedPanel">
+        <span>
+          <strong>高级设置</strong>
+          <small>下滑 5 次 · 刷新 2–10 秒</small>
+        </span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+      </button>
+      <div id="advancedPanel" class="advanced-panel" hidden>
+        <label>最大下滑次数<input inputmode="numeric" value="5"></label>
+        <label>刷新最小秒数<input inputmode="numeric" value="2"></label>
+        <label>刷新最大秒数<input inputmode="numeric" value="10"></label>
+        <label>首页作品数量<input inputmode="numeric" value="1"></label>
+        <label>休息分钟<input value="5–10"></label>
+        <label>作品滑动次数<input value="1–8"></label>
+        <label class="full-width">卡密<input placeholder="Debug 可留空"></label>
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="startButton" class="primary-button" type="button">开始筛选预演</button>
+      <button id="stopButton" class="secondary-button" type="button">停止预演</button>
+      <p id="runMessage" role="status">等待开始，不会操作报名按钮</p>
+    </section>
+
+    <section class="results-section">
+      <div class="section-heading results-heading">
+        <div>
+          <h2>扫描结果</h2>
+          <p>最近一次页面解析</p>
+        </div>
+        <button type="button" class="text-button">查看全部</button>
+      </div>
+
+      <dl class="metrics">
+        <div><dt>已扫描</dt><dd id="scannedCount">18</dd></div>
+        <div><dt>符合</dt><dd id="eligibleCount" class="metric-good">6</dd></div>
+        <div><dt>已排除</dt><dd id="excludedCount">12</dd></div>
+      </dl>
+
+      <div class="task-list">
+        <article class="task-row task-eligible">
+          <div class="task-indicator"></div>
+          <div class="task-content">
+            <div class="task-title-line">
+              <span class="result-label">符合</span>
+              <h3>春季新款连帽卫衣穿搭任务</h3>
+            </div>
+            <div class="task-meta">
+              <span>现金奖励 <strong>¥100</strong></span>
+              <span>16/20人</span>
+              <span>15小时后截止</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="task-row task-excluded">
+          <div class="task-indicator"></div>
+          <div class="task-content">
+            <div class="task-title-line">
+              <span class="result-label">已排除</span>
+              <h3>球鞋开箱体验任务</h3>
+            </div>
+            <div class="task-meta">
+              <span>现金奖励 ¥80</span>
+              <span class="reason">名额已满</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2.8 20 6v5.5c0 5.1-3.4 8.3-8 9.7-4.6-1.4-8-4.6-8-9.7V6l8-3.2Z"></path>
+        <path d="m8.8 12.1 2.1 2.1 4.5-4.7"></path>
+      </svg>
+      <span>不会点击报名或申请入驻</span>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

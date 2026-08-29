@@ -47,14 +47,23 @@ object NodeUtils {
     fun findAllByTexts(root: AccessibilityNodeInfo?, texts: Collection<String>): List<AccessibilityNodeInfo> {
         if (root == null) return emptyList()
         val normalized = texts.map { it.trim() }.filter { it.isNotEmpty() }
-        val result = mutableListOf<AccessibilityNodeInfo>()
-        breadthFirst(root) { node ->
+        return findAll(root) { node ->
             val value = node.text?.toString()?.trim().orEmpty()
             val desc = node.contentDescription?.toString()?.trim().orEmpty()
-            val matched = normalized.any {
+            normalized.any {
                 it == value || it == desc || value.contains(it, ignoreCase = true) || desc.contains(it, ignoreCase = true)
             }
-            if (matched) result += node
+        }
+    }
+
+    fun findAll(
+        root: AccessibilityNodeInfo?,
+        predicate: (AccessibilityNodeInfo) -> Boolean,
+    ): List<AccessibilityNodeInfo> {
+        if (root == null) return emptyList()
+        val result = mutableListOf<AccessibilityNodeInfo>()
+        breadthFirst(root) { node ->
+            if (predicate(node)) result += node
             false
         }
         return result
@@ -70,6 +79,19 @@ object NodeUtils {
             current = current!!.parent
         }
         return false
+    }
+
+    fun nearestClickableAncestor(
+        node: AccessibilityNodeInfo?,
+        maxLevels: Int = 6,
+    ): AccessibilityNodeInfo? {
+        var current = node
+        repeat(maxLevels.coerceAtLeast(1)) {
+            val candidate = current ?: return null
+            if (candidate.isClickable && candidate.isEnabled) return candidate
+            current = candidate.parent
+        }
+        return null
     }
 
     fun collectText(node: AccessibilityNodeInfo?, maxNodes: Int = 120): String {
