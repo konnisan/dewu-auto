@@ -151,14 +151,14 @@ class AutomationController(
 
     private fun handleWaitingHome(root: AccessibilityNodeInfo?) {
         when {
-            isBrandPage(root) -> enterState(AutomationState.WAITING_BRAND_PAGE, "已在品牌合作页面")
+            isBrandPage(root) -> enterState(AutomationState.WAITING_BRAND_PAGE, "已在任务列表页面")
             isTaskDetail(root) -> {
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                 touchAction("从任务详情安全返回")
                 stateEnteredAt = SystemClock.elapsedRealtime()
             }
             isProfile(root) -> {
-                brandEntryStep = if (NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) 1 else 0
+                brandEntryStep = 0
                 enterState(AutomationState.OPENING_BRAND_COOPERATION, "已在个人/创作中心")
             }
             isHome(root) -> enterState(AutomationState.OPENING_PROFILE, "检测到首页，准备进入个人中心")
@@ -192,7 +192,7 @@ class AutomationController(
 
     private fun handleWaitingProfile(root: AccessibilityNodeInfo?) {
         if (isBrandPage(root)) {
-            enterState(AutomationState.WAITING_BRAND_PAGE, "已进入品牌合作页面")
+            enterState(AutomationState.WAITING_BRAND_PAGE, "已进入任务列表页面")
             return
         }
         if (!isProfile(root)) {
@@ -203,22 +203,22 @@ class AutomationController(
             return
         }
 
-        brandEntryStep = if (NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) 1 else 0
+        brandEntryStep = 0
         lastBrandDiagnosticAt = 0L
-        enterState(AutomationState.OPENING_BRAND_COOPERATION, "进入创作中心并定位品牌合作")
+        enterState(AutomationState.OPENING_BRAND_COOPERATION, "进入创作中心并点击查看更多")
     }
 
     private fun handleOpenBrand(root: AccessibilityNodeInfo?) {
         if (isBrandPage(root)) {
-            enterState(AutomationState.WAITING_BRAND_PAGE, "已进入品牌合作页面")
+            enterState(AutomationState.WAITING_BRAND_PAGE, "已进入任务列表页面")
             return
         }
         if (!isDewuRoot(root)) return
 
-        // 第一步：在“我的”页进入创作中心。
-        // 如果当前已经能看到“品牌合作/商单”，说明已经位于创作中心，不重复点击标题。
+        // 当前测试账号不是达人号，“我的”页没有商单/品牌合作入口。
+        // 第一步只负责进入创作中心；如果已经看到精确“查看更多”，说明已在创作中心，可直接进入下一步。
         if (brandEntryStep == 0) {
-            if (NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) {
+            if (hasExactMore(root)) {
                 brandEntryStep = 1
                 stateEnteredAt = SystemClock.elapsedRealtime()
             } else {
@@ -233,18 +233,17 @@ class AutomationController(
             }
         }
 
-        // 第二步：只点击“品牌合作”区域对应的“查看更多”。
-        // 页面上可能同时有多个查看更多，绝不使用“第一个查看更多”作为兜底。
-        if (brandEntryStep >= 1 && clickBrandCooperationMore(root)) {
+        // 当前测试阶段跳过“品牌合作/商单文字”前置判断，直接点击创作中心里的精确“查看更多”。
+        if (brandEntryStep >= 1 && clickCreationCenterMore(root)) {
             brandEntryStep = 2
-            enterState(AutomationState.WAITING_BRAND_PAGE, "等待品牌合作任务列表")
+            enterState(AutomationState.WAITING_BRAND_PAGE, "等待后续任务列表")
             return
         }
 
-        diagnoseBrandNavigationPeriodically(root, "OPENING_BRAND")
+        diagnoseBrandNavigationPeriodically(root, "OPENING_CREATION_MORE")
         if (elapsedInState() > PAGE_TIMEOUT_MS) {
-            diagnoseBrandNavigation(root, "OPENING_BRAND_TIMEOUT")
-            fail("未找到创作中心内“品牌合作”的查看更多")
+            diagnoseBrandNavigation(root, "OPENING_CREATION_MORE_TIMEOUT")
+            fail("未找到创作中心的查看更多")
         }
     }
 
@@ -260,39 +259,31 @@ class AutomationController(
         }
 
         if (NodeUtils.hasAnyText(root, DewuSelectors.WRONG_MORE_PAGE_MARKERS)) {
-            if (wrongMoreRecoveryCount >= 1) {
+            if (wrongMoreRecoveryCount >= 2) {
                 diagnoseBrandNavigation(root, "WRONG_MORE_REPEAT")
-                fail("连续进入了非品牌合作页面，已安全停止")
+                fail("连续进入非目标查看更多页面，已停止")
                 return
             }
             wrongMoreRecoveryCount++
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            touchAction("误入其它查看更多页面，安全返回")
+            touchAction("误入其它查看更多页面，返回创作中心")
             brandEntryStep = 1
             notBeforeAt = SystemClock.elapsedRealtime() + 1_000L
-            enterState(AutomationState.OPENING_BRAND_COOPERATION, "返回创作中心，重新定位品牌合作")
+            enterState(AutomationState.OPENING_BRAND_COOPERATION, "重新点击创作中心查看更多")
             return
         }
 
-        // 如果点击没有触发页面跳转，只允许重新尝试品牌合作上下文中的按钮。
-        // 不再像旧实现一样反复点击任意“查看更多”。
-        if (elapsedInState() > 2_000L && NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT)) {
-            if (clickBrandCooperationMore(root)) {
-                stateEnteredAt = SystemClock.elapsedRealtime()
-                return
-            }
+        // 点击没有触发页面切换时直接重试精确“查看更多”，不再要求先出现品牌合作/商单文字。
+        if (elapsedInState() > 2_000L && clickCreationCenterMore(root)) {
+            stateEnteredAt = SystemClock.elapsedRealtime()
+            return
         }
 
-        diagnoseBrandNavigationPeriodically(root, "WAITING_BRAND_PAGE")
+        diagnoseBrandNavigationPeriodically(root, "WAITING_TASK_PAGE")
         if (elapsedInState() > PAGE_TIMEOUT_MS) {
             runtime.requiresCreatorEnrollment = NodeUtils.hasAnyText(root, DewuSelectors.APPLY_TO_JOIN)
-            diagnoseBrandNavigation(root, "WAITING_BRAND_TIMEOUT")
-            val reason = if (runtime.requiresCreatorEnrollment) {
-                "当前账号仅显示申请入驻，已安全停止"
-            } else {
-                "点击品牌合作查看更多后，未识别到品牌合作任务列表"
-            }
-            finish(reason)
+            diagnoseBrandNavigation(root, "WAITING_TASK_PAGE_TIMEOUT")
+            finish("点击创作中心查看更多后，未识别到后续任务列表")
         }
     }
 
@@ -375,7 +366,7 @@ class AutomationController(
     }
 
     private fun scanVisibleTasks(root: AccessibilityNodeInfo): List<PreviewTaskResult> {
-        // 这里读取“报名/立即报名”文字只是为了定位任务卡片，绝不会点击这些节点。
+        // 这里读取“报名/立即报名”文字只是为了定位任务卡片，当前 Codex 预演阶段不会点击这些节点。
         val registerNodes = NodeUtils.findAllByTexts(root, DewuSelectors.REGISTER_BUTTONS)
             .filter { nodeLabel(it) in DewuSelectors.REGISTER_BUTTONS }
         val capacityNodes = NodeUtils.findAll(root) { node ->
@@ -498,17 +489,41 @@ class AutomationController(
         return true
     }
 
+    private fun hasExactMore(root: AccessibilityNodeInfo?): Boolean =
+        NodeUtils.findAllByTexts(root, DewuSelectors.MORE)
+            .any { node ->
+                nodeLabel(node) in DewuSelectors.MORE &&
+                    NodeUtils.bounds(node)?.let { it.width() > 0 && it.height() > 0 } == true
+            }
+
     /**
-     * 创作中心可能同时存在多个“查看更多”。
-     * 优先规则：
-     * 1. “查看更多”的祖先容器文本里明确包含“品牌合作/商单”；
-     * 2. React Native 把标题和按钮拆成兄弟节点时，按屏幕坐标选择距离“品牌合作”最近的查看更多；
-     * 3. 只有页面同时存在品牌合作，并且全页只有一个查看更多时，才允许唯一按钮兜底。
+     * 当前测试账号没有达人号专属的“商单/品牌合作”入口。
+     * 进入创作中心后，直接使用精确“查看更多”作为后续任务页入口。
      *
-     * 永远不会因为找不到品牌上下文而点击页面第一个查看更多。
+     * 选择规则：
+     * 1. Accessibility 重复引用已经在 NodeUtils 按 label + bounds 去重；
+     * 2. 去重后只有一个精确“查看更多”时直接使用；
+     * 3. 如果存在多个不同位置，优先祖先中具有任务预览特征（现金奖励 + 报名人数/报名）的节点；
+     * 4. 若达人号页面能够暴露品牌合作文字，再使用品牌标题的几何邻近作为兼容兜底；
+     * 5. 最终一律点击精确文字节点当前实时 bounds 中心，不沿 React Native 大父容器 ACTION_CLICK。
      */
-    private fun clickBrandCooperationMore(root: AccessibilityNodeInfo?): Boolean {
+    private fun clickCreationCenterMore(root: AccessibilityNodeInfo?): Boolean {
         if (root == null) return false
+
+        val moreNodes = NodeUtils.findAllByTexts(root, DewuSelectors.MORE)
+            .filter { nodeLabel(it) in DewuSelectors.MORE }
+            .filter { node ->
+                val rect = NodeUtils.bounds(node)
+                rect != null && rect.width() > 0 && rect.height() > 0
+            }
+        if (moreNodes.isEmpty()) return false
+
+        val taskContextCandidate = moreNodes.firstOrNull { node ->
+            val context = NodeUtils.ancestorText(node, levels = 8)
+            val hasReward = context.contains("现金奖励") || context.contains("¥") || context.contains("￥")
+            val hasRegistration = TASK_CAPACITY_PATTERN.containsMatchIn(context) || context.contains("报名")
+            hasReward && hasRegistration
+        }
 
         val brandNodes = NodeUtils.findAllByTexts(root, DewuSelectors.BRAND_CONTEXT)
             .filter { node ->
@@ -517,55 +532,38 @@ class AutomationController(
                     label.equals(context, ignoreCase = true) || label.contains(context, ignoreCase = true)
                 }
             }
-        val moreNodes = NodeUtils.findAllByTexts(root, DewuSelectors.MORE)
-            .filter { nodeLabel(it) in DewuSelectors.MORE }
-            .filter { node ->
-                val rect = NodeUtils.bounds(node)
-                rect != null && rect.width() > 0 && rect.height() > 0
-            }
-
-        if (brandNodes.isEmpty() || moreNodes.isEmpty()) return false
-
-        val ancestorCandidate = moreNodes.firstOrNull { node ->
-            val context = NodeUtils.ancestorText(node, levels = 8)
-            DewuSelectors.BRAND_CONTEXT.any { context.contains(it, ignoreCase = true) }
-        }
-
-        val geometryCandidate = if (ancestorCandidate == null) {
+        val geometryCandidate = if (taskContextCandidate == null && brandNodes.isNotEmpty()) {
             findNearestBrandMoreByGeometry(brandNodes, moreNodes)
         } else {
             null
         }
 
-        val uniqueCandidate = if (ancestorCandidate == null && geometryCandidate == null && moreNodes.size == 1) {
+        val uniqueCandidate = if (taskContextCandidate == null && geometryCandidate == null && moreNodes.size == 1) {
             moreNodes.first()
         } else {
             null
         }
 
-        val candidate = ancestorCandidate ?: geometryCandidate ?: uniqueCandidate ?: return false
+        val candidate = taskContextCandidate ?: geometryCandidate ?: uniqueCandidate ?: run {
+            log("CREATION_MORE ambiguous count=${moreNodes.size}; 等待更多页面特征，不盲点")
+            return false
+        }
         val bounds = NodeUtils.bounds(candidate) ?: return false
 
         val method = when (candidate) {
-            ancestorCandidate -> "祖先上下文"
-            geometryCandidate -> "屏幕邻近"
-            else -> "唯一按钮"
+            taskContextCandidate -> "任务预览上下文"
+            geometryCandidate -> "品牌几何兼容"
+            else -> "唯一精确按钮"
         }
         log(
-            "BRAND_MORE matched=$method bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} " +
-                "brandCount=${brandNodes.size} moreCount=${moreNodes.size}",
+            "CREATION_MORE matched=$method bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} " +
+                "moreCount=${moreNodes.size}",
         )
-
-        if (NodeUtils.clickNode(candidate)) {
-            touchAction("点击品牌合作查看更多($method)")
-            notBeforeAt = SystemClock.elapsedRealtime() + 1_500L
-            return true
-        }
 
         val tapped = performTap(
             x = bounds.centerX().toFloat(),
             y = bounds.centerY().toFloat(),
-            label = "点击品牌合作查看更多($method/坐标)",
+            label = "点击创作中心查看更多($method)",
         )
         if (tapped) notBeforeAt = SystemClock.elapsedRealtime() + 1_500L
         return tapped
@@ -590,8 +588,6 @@ class AutomationController(
                 val verticalDistance = abs(moreRect.centerY() - brandRect.centerY())
                 if (verticalDistance > maxVerticalDistance) continue
 
-                // 品牌合作标题通常在卡片左侧/上方，查看更多通常在右侧或同一模块下方。
-                // 对明显位于品牌标题左侧、且离得较远的按钮增加惩罚，避免跨模块误匹配。
                 val leftPenalty = if (moreRect.centerX() + moreRect.width() < brandRect.centerX()) 500 else 0
                 val abovePenalty = if (moreRect.centerY() < brandRect.top - 120) 350 else 0
                 val horizontalDistance = abs(moreRect.centerX() - brandRect.centerX()) / 4
