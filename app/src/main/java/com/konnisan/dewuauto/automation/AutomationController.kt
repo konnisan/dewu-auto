@@ -319,14 +319,14 @@ class AutomationController(
         }
         if (!sortMenuOpened) {
             val current = findVisibleNodeByTexts(root, DewuSelectors.SORT_ENTRY)
-            if (activateNode(current, "打开排序菜单")) {
+            if (tapWebNode(current, "打开排序菜单", useRightEdge = true)) {
                 sortMenuOpened = true
             }
             return
         }
 
         val targetNode = findBottommostVisibleNodeByText(root, targetSort)
-        if (activateNode(targetNode, "选择排序：$targetSort")) {
+        if (tapWebNode(targetNode, "选择排序：$targetSort")) {
             delayByRefreshWindow()
             sortMenuOpened = false
             runtime.listScrollCount = 0
@@ -348,42 +348,33 @@ class AutomationController(
         if (root == null || !isBrandPage(root)) return
         when (categoryStep) {
             0 -> {
-                val selectedCategory = findVisibleNodeByTexts(root, listOf(config.productCategory))
-                val selectedBounds = NodeUtils.bounds(selectedCategory)
-                val screen = ScreenInfo.from(service)
-                if (selectedBounds != null && selectedBounds.centerY() < screen.heightPx * 0.5f) {
-                    runtime.listScrollCount = 0
-                    enterState(AutomationState.SCANNING_TASKS, "产品类目已是${config.productCategory}，扫描当前页")
-                    return
-                }
-                if (clickText(root, listOf(DewuSelectors.PRODUCT_CATEGORY), "打开产品类目")) {
+                val filterNode = findVisibleNodeByTexts(root, listOf(DewuSelectors.FILTER_ENTRY))
+                if (tapWebNode(filterNode, "打开筛选面板")) {
                     categoryStep = 1
                     notBeforeAt = SystemClock.elapsedRealtime() + 900L
                     return
                 }
-                performHorizontalSwipe(left = true, label = "筛选栏左滑")
+                if (elapsedInState() > PAGE_TIMEOUT_MS) fail("未找到商单筛选入口")
             }
 
             1 -> {
                 val categoryNode = findVisibleNodeByTexts(root, listOf(config.productCategory))
-                if (activateNode(categoryNode, "选择类目：${config.productCategory}")) {
+                if (tapWebNode(categoryNode, "选择类目：${config.productCategory}")) {
                     categoryStep = 2
                     stateEnteredAt = SystemClock.elapsedRealtime()
-                } else if (elapsedInState() > 900L && tapCategoryMenuRow(config.productCategory)) {
-                    categoryStep = 2
-                    stateEnteredAt = SystemClock.elapsedRealtime()
+                } else if (elapsedInState() > PAGE_TIMEOUT_MS) {
+                    fail("筛选面板中未找到类目：${config.productCategory}")
                 }
             }
 
             else -> {
                 val confirmNode = findVisibleNodeByTexts(root, DewuSelectors.FILTER_CONFIRM)
-                if (activateNode(confirmNode, "确认产品类目筛选")) {
+                if (tapWebNode(confirmNode, "确认产品类目筛选")) {
                     delayByRefreshWindow()
                     runtime.listScrollCount = 0
                     enterState(AutomationState.SCANNING_TASKS, "扫描当前页任务")
-                } else if (elapsedInState() > 3_000L) {
-                    runtime.listScrollCount = 0
-                    enterState(AutomationState.SCANNING_TASKS, "产品类目已选择，扫描当前页")
+                } else if (elapsedInState() > PAGE_TIMEOUT_MS) {
+                    fail("产品类目已选择，但未找到筛选确认按钮")
                 }
             }
         }
@@ -490,22 +481,13 @@ class AutomationController(
         repeat(7) {
             val candidate = current ?: return null
             val cardText = NodeUtils.collectText(candidate, maxNodes = 100)
-            val hasCapacity = TASK_CAPACITY_PATTERN.containsMatchIn(cardText)
+            val compactText = cardText.replace(Regex("\\s*\\|\\s*"), "")
+            val hasCapacity = TASK_CAPACITY_PATTERN.containsMatchIn(compactText)
             val hasReward = cardText.contains("现金奖励") || cardText.contains("¥") || cardText.contains("￥")
             if (hasCapacity && hasReward) return candidate
             current = candidate.parent
         }
         return null
-    }
-
-    private fun tapCategoryMenuRow(category: String): Boolean {
-        val index = DewuSelectors.PRODUCT_CATEGORIES.indexOf(category)
-        if (index < 0) return false
-        val screen = ScreenInfo.from(service)
-        val x = screen.widthPx * 0.5f
-        val firstRowY = screen.heightPx * 0.161f
-        val rowSpacing = screen.heightPx * 0.045f
-        return performTap(x, firstRowY + rowSpacing * index, "选择类目：$category（菜单行）")
     }
 
     private fun handleScrollTasks() {
@@ -872,7 +854,11 @@ class AutomationController(
 
     private fun isVisible(node: AccessibilityNodeInfo): Boolean {
         val bounds = NodeUtils.bounds(node) ?: return false
-        return bounds.width() > 0 && bounds.height() > 0 && node.isVisibleToUser
+        val screen = ScreenInfo.from(service)
+        return bounds.width() > 0 && bounds.height() > 0 &&
+            bounds.centerX() in 0..screen.widthPx &&
+            bounds.centerY() in (screen.heightPx * 0.03f).toInt()..(screen.heightPx * 0.98f).toInt() &&
+            node.isVisibleToUser
     }
 
     private fun activateNode(node: AccessibilityNodeInfo?, label: String): Boolean {
@@ -902,12 +888,24 @@ class AutomationController(
             log("报名安全拦截：state=${runtime.state}, expected=$expectedText, actual=${nodeLabel(candidate)}")
             return false
         }
-        if (NodeUtils.clickNode(candidate)) {
-            touchAction(label)
-            return true
-        }
         val bounds = NodeUtils.bounds(candidate) ?: return false
         return performTap(bounds.centerX().toFloat(), bounds.centerY().toFloat(), label)
+    }
+
+    private fun tapWebNode(
+        node: AccessibilityNodeInfo?,
+        label: String,
+        useRightEdge: Boolean = false,
+    ): Boolean {
+        val candidate = node ?: return false
+        if (!isVisible(candidate)) return false
+        val bounds = NodeUtils.bounds(candidate) ?: return false
+        val x = if (useRightEdge) {
+            bounds.right - (bounds.width() * 0.12f).coerceAtLeast(12f)
+        } else {
+            bounds.centerX().toFloat()
+        }
+        return performTap(x, bounds.centerY().toFloat(), label)
     }
 
     private fun clickTaskPreviewMore(root: AccessibilityNodeInfo?): Boolean {

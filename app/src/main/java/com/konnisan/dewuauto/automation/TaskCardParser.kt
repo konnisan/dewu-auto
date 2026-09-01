@@ -10,6 +10,9 @@ object TaskCardParser {
     )
 
     private val nonTitlePatterns = listOf(
+        Regex("^投稿$"),
+        Regex("^仅图文$|^仅视频$"),
+        Regex("^Lv\\.?\\d+.*任务$", RegexOption.IGNORE_CASE),
         Regex("^报名$"),
         Regex("^立即报名$"),
         Regex("^已报名"),
@@ -26,20 +29,21 @@ object TaskCardParser {
             .replace(Regex("\\s+"), " ")
             .trim(' ', '|', ',')
         if (normalized.isBlank()) return null
+        val compact = normalized.replace(Regex("\\s*\\|\\s*"), "")
 
         val title = normalized
             .split('|', ',', '，')
             .map { it.trim() }
             .firstOrNull { part ->
-                part.length >= 4 && nonTitlePatterns.none { it.containsMatchIn(part) }
+                part.length >= 2 && nonTitlePatterns.none { it.containsMatchIn(part) }
             }
             ?: return null
 
-        val reward = rewardPattern.find(normalized)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
-        val capacityMatch = capacityPattern.find(normalized)
+        val reward = rewardPattern.find(compact)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+        val capacityMatch = capacityPattern.find(compact)
         val registered = capacityMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
         val capacity = capacityMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
-        val deadline = deadlinePattern.find(normalized)?.value?.trim()
+        val deadline = deadlinePattern.find(compact)?.value?.trim()
         val signatureSource = listOf(title, reward, registered, capacity, deadline).joinToString("|")
 
         return TaskCard(

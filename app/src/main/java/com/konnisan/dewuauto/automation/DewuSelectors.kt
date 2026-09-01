@@ -26,6 +26,7 @@ object DewuSelectors {
 
     const val REWARD_TYPE = "奖励类型"
     const val PRODUCT_CATEGORY = "产品类目"
+    const val FILTER_ENTRY = "筛选"
 
     val REGISTER_BUTTONS = listOf("立即报名", "报名")
     const val IMMEDIATE_REGISTER = "立即报名"

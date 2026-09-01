@@ -22,6 +22,17 @@ fun main() {
     check(currentBrandCard.registeredCount == 9)
     check(currentBrandCard.capacity == 40)
 
+    val splitWebViewCard = requireNotNull(
+        TaskCardParser.parse(
+            "投稿 | 冲锋衣 | 报名 | ： | 38 | /40人 | 6 | 天 | 后截止 | 现金奖励¥20 | 报名",
+        ),
+    )
+    check(splitWebViewCard.title == "冲锋衣")
+    check(splitWebViewCard.rewardAmount == 20.0)
+    check(splitWebViewCard.registeredCount == 38)
+    check(splitWebViewCard.capacity == 40)
+    check(splitWebViewCard.deadlineText == "6天后截止")
+
     val fullTask = requireNotNull(
         TaskCardParser.parse("球鞋开箱体验任务 | 已报名：80/80人 | 6天后截止 | 现金奖励 | ¥100 | 报名"),
     )
@@ -75,5 +86,5 @@ fun main() {
             listOf("内定", "复投", "直接报名"),
     )
 
-    println("TASK_FILTER_OK parser=2 listFilters=4 detailFilters=2 formRules=6 splitTerms=1")
+    println("TASK_FILTER_OK parser=3 webViewSplit=1 listFilters=4 detailFilters=2 formRules=6 splitTerms=1")
 }
