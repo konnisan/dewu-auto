@@ -50,7 +50,7 @@ class AutomationPrefs(context: Context) {
         maxPrice = prefs.getString("maxPrice", "9999999")?.toDoubleOrNull() ?: 9_999_999.0,
         excludedWords = prefs.getString(
             "excludedWords",
-            "内定,复投,直接报名,订阅提醒,定制,露脸,真人出镜,出镜,拍视频,视频拍摄,口播,直播",
+            "",
         )
             .orEmpty().split(Regex("(?:##|[,，、;；\\s]+)"))
             .map { it.trim() }

@@ -6,7 +6,7 @@ if not exist "%KOTLIN_ROOT%\lib\kotlin-compiler.jar" (
   exit /b 1
 )
 if not exist "build\verification" mkdir "build\verification"
-java -cp "%KOTLIN_ROOT%\lib\kotlin-preloader.jar" ^
+java -Xmx512m -XX:+UseSerialGC -cp "%KOTLIN_ROOT%\lib\kotlin-preloader.jar" ^
   org.jetbrains.kotlin.preloading.Preloader ^
   -cp "%KOTLIN_ROOT%\lib\kotlin-compiler.jar" ^
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler ^

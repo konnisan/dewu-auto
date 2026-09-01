@@ -17,6 +17,10 @@ object DewuSelectors {
     val BRAND_PAGE_MARKERS = listOf("综合排序", "奖励类型", "产品类目", "商单", "品牌合作")
     val TASK_DETAIL_MARKERS = listOf("任务详情", "合作详情", "拍摄要求")
     val DETAIL_SECTION_MARKERS = listOf("达人要求", "发布要求", "合作方式", "任务要求")
+    val DETAIL_SECTION_BOUNDARIES = listOf(
+        "任务商品", "发布时间", "合作方式", "达人要求", "发布要求", "任务要求",
+        "引力商业内容指南", "品牌合作课堂",
+    )
     val WRONG_MORE_PAGE_MARKERS = listOf("好内容,得免单", "获取机会", "报名机会")
     val MORE = listOf("查看更多")
 

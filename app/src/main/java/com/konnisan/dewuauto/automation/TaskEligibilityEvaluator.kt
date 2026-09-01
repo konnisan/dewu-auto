@@ -5,6 +5,8 @@ import com.konnisan.dewuauto.config.AutomationConfig
 object TaskEligibilityEvaluator {
     private val stoppedMarkers = listOf("已截止", "报名结束", "不可报名")
 
+    private data class BlockField(val displayName: String, val value: String)
+
     fun evaluate(task: TaskCard, config: AutomationConfig): TaskEligibility {
         if (
             task.capacity != null &&
@@ -19,12 +21,10 @@ object TaskEligibilityEvaluator {
             return TaskEligibility(false, "任务已截止")
         }
 
-        val excludedWord = config.excludedWords.firstOrNull {
-            task.rawText.contains(it, ignoreCase = true)
-        }
-        if (excludedWord != null) {
-            return TaskEligibility(false, "命中排除词：$excludedWord")
-        }
+        findBlockedWord(
+            fields = listOf(BlockField("商品名字", task.title)),
+            words = config.excludedWords,
+        )?.let { return it }
 
         val reward = task.rewardAmount
         if (reward == null && (config.minPrice > 0.0 || config.maxPrice < 9_999_999.0)) {
@@ -38,13 +38,26 @@ object TaskEligibilityEvaluator {
     }
 
     fun evaluateDetail(detail: TaskDetail, config: AutomationConfig): TaskEligibility {
-        val excludedWord = config.excludedWords.firstOrNull {
-            detail.rawText.contains(it, ignoreCase = true)
+        findBlockedWord(
+            fields = listOf(
+                BlockField("商品名字", detail.productName),
+                BlockField("合作方式", detail.cooperationMethod),
+                BlockField("达人要求", detail.creatorRequirements),
+            ),
+            words = config.excludedWords,
+        )?.let { return it }
+        return TaskEligibility(true, "商品名字、合作方式、达人要求均未命中屏蔽词")
+    }
+
+    private fun findBlockedWord(fields: List<BlockField>, words: List<String>): TaskEligibility? {
+        fields.forEach { field ->
+            words.firstOrNull { word ->
+                word.isNotBlank() && field.value.contains(word.trim(), ignoreCase = true)
+            }?.let { word ->
+                return TaskEligibility(false, "${field.displayName}命中屏蔽词：${word.trim()}")
+            }
         }
-        if (excludedWord != null) {
-            return TaskEligibility(false, "详情命中排除词：$excludedWord")
-        }
-        return TaskEligibility(true, "列表与详情筛选均通过")
+        return null
     }
 
     internal fun splitTerms(value: String): List<String> = value

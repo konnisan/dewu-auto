@@ -16,10 +16,7 @@ data class AutomationConfig(
     val videoStayMaxSeconds: Int = 10,
     val minPrice: Double = 21.0,
     val maxPrice: Double = 9_999_999.0,
-    val excludedWords: List<String> = listOf(
-        "内定", "复投", "直接报名", "订阅提醒", "定制",
-        "露脸", "真人出镜", "出镜", "拍视频", "视频拍摄", "口播", "直播",
-    ),
+    val excludedWords: List<String> = emptyList(),
     val sizeSpec: String = "",
     val refreshMinSeconds: Int = 2,
     val refreshMaxSeconds: Int = 10,

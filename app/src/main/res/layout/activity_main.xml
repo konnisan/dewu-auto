@@ -292,10 +292,9 @@
                         android:layout_height="46dp"
                         android:background="@drawable/bg_input"
                         android:gravity="center_vertical"
-                        android:hint="用逗号或 ## 分隔"
+                        android:hint="例如：露脸,拍视频；用逗号或 ## 分隔"
                         android:paddingHorizontal="12dp"
                         android:singleLine="true"
-                        android:text="内定,复投,直接报名,订阅提醒,定制,露脸,真人出镜,出镜,拍视频,视频拍摄,口播,直播"
                         android:textColor="#15191C"
                         android:textSize="14sp" />
 

@@ -673,8 +673,8 @@ class AutomationController(
 
     private fun handleValidatingTaskDetail(root: AccessibilityNodeInfo?) {
         if (!isTaskDetail(root)) return
-        val rawText = NodeUtils.collectText(root, maxNodes = 400)
-        val detail = TaskDetailParser.parse(rawText)
+        val detailTextSegments = NodeUtils.collectTextValues(root, maxNodes = 400)
+        val detail = TaskDetailParser.parse(detailTextSegments, runtime.currentTaskTitle)
         if (detail == null) {
             abandonCurrentTask("任务详情解析失败", "详情解析失败")
             return
@@ -690,7 +690,7 @@ class AutomationController(
             return
         }
 
-        runtime.detailCheckSummary = "通过：列表与详情未命中排除词"
+        runtime.detailCheckSummary = "通过：三个字段均未命中屏蔽词"
 
         val button = findVisibleNodeByTexts(root, listOf(DewuSelectors.IMMEDIATE_REGISTER))
         if (activateEnrollmentNode(

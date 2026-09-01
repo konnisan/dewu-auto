@@ -105,21 +105,27 @@ object NodeUtils {
     }
 
     fun collectText(node: AccessibilityNodeInfo?, maxNodes: Int = 120): String {
-        if (node == null) return ""
-        val values = LinkedHashSet<String>()
+        return collectTextValues(node, maxNodes).distinct().joinToString(" | ")
+    }
+
+    fun collectTextValues(node: AccessibilityNodeInfo?, maxNodes: Int = 120): List<String> {
+        if (node == null) return emptyList()
+        val values = mutableListOf<String>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(node)
         var visited = 0
         while (queue.isNotEmpty() && visited < maxNodes) {
             val current = queue.removeFirst()
             visited++
-            current.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let(values::add)
-            current.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let(values::add)
+            val text = current.text?.toString()?.trim().orEmpty()
+            val description = current.contentDescription?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) values += text
+            if (description.isNotEmpty() && description != text) values += description
             for (i in 0 until current.childCount) {
                 current.getChild(i)?.let(queue::addLast)
             }
         }
-        return values.joinToString(" | ")
+        return values
     }
 
     fun ancestorText(node: AccessibilityNodeInfo?, levels: Int = 4): String {

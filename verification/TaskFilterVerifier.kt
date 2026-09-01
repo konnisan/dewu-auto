@@ -41,10 +41,13 @@ fun main() {
     check(!fullResult.eligible && fullResult.reason == "名额已满")
 
     val sampleTask = requireNotNull(
-        TaskCardParser.parse("男士冲锋衣 L码 复投任务 | 已报名：8/80人 | 6天后截止 | 现金奖励 | ¥100 | 报名"),
+        TaskCardParser.parse("需要露脸的男士冲锋衣 | 已报名：8/80人 | 6天后截止 | 现金奖励 | ¥100 | 报名"),
     )
-    val excludedResult = TaskEligibilityEvaluator.evaluate(sampleTask, AutomationConfig())
-    check(!excludedResult.eligible && excludedResult.reason.contains("复投"))
+    val excludedResult = TaskEligibilityEvaluator.evaluate(
+        sampleTask,
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(!excludedResult.eligible && excludedResult.reason == "商品名字命中屏蔽词：露脸")
 
     val acceptedResult = TaskEligibilityEvaluator.evaluate(
         sampleTask,
@@ -63,16 +66,42 @@ fun main() {
     )
     check(sizeNotRequiredOnCard.eligible)
 
-    val blockedDetail = requireNotNull(
-        TaskDetailParser.parse("任务详情 | 配件体验任务 | 达人要求 | 需要真人露脸拍视频 | 发布要求"),
+    val parsedDetail = requireNotNull(
+        TaskDetailParser.parse(
+            "任务详情 | 配件体验任务 | 任务商品 | 石榴石三圈手串 | 商品描述 | " +
+                "发布时间 | 2026-09-01 至 2026-09-15 | 合作方式 | 现金收益，拍摄后商品需寄回 | " +
+                "达人要求 | 选中后加v | 发布要求 | 页面示例文字包含露脸",
+            fallbackProductName = "列表备用标题",
+        ),
     )
-    val blockedDetailResult = TaskEligibilityEvaluator.evaluateDetail(blockedDetail, AutomationConfig())
-    check(!blockedDetailResult.eligible && blockedDetailResult.reason.contains("露脸"))
+    check(parsedDetail.productName == "石榴石三圈手串")
+    check(parsedDetail.cooperationMethod == "现金收益，拍摄后商品需寄回")
+    check(parsedDetail.creatorRequirements == "选中后加v")
 
-    val acceptedDetail = requireNotNull(
-        TaskDetailParser.parse("任务详情 | 配件体验任务 | 达人要求 | 无特殊要求 | 图文发布"),
+    val productBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(productName = "需要露脸的手串"),
+        AutomationConfig(excludedWords = listOf("露脸")),
     )
-    check(TaskEligibilityEvaluator.evaluateDetail(acceptedDetail, AutomationConfig()).eligible)
+    check(!productBlocked.eligible && productBlocked.reason == "商品名字命中屏蔽词：露脸")
+
+    val cooperationBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(cooperationMethod = "需要露脸展示产品"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(!cooperationBlocked.eligible && cooperationBlocked.reason == "合作方式命中屏蔽词：露脸")
+
+    val requirementsBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(creatorRequirements = "达人必须真人露脸"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(!requirementsBlocked.eligible && requirementsBlocked.reason == "达人要求命中屏蔽词：露脸")
+
+    val outsideFieldsAccepted = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail,
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(outsideFieldsAccepted.eligible)
+    check(TaskEligibilityEvaluator.evaluateDetail(parsedDetail, AutomationConfig()).eligible)
 
     val enrollmentForm = "确认报名信息 | 收货地址 | 张三 13800000000 某地址 | 样品规格 | 均码 | 确认报名"
     check(EnrollmentFormHandler.isEnrollmentForm(enrollmentForm))
@@ -102,5 +131,5 @@ fun main() {
             listOf("内定", "复投", "直接报名"),
     )
 
-    println("TASK_FILTER_OK parser=3 webViewSplit=1 listFilters=4 detailFilters=2 formRules=6 gate=8 specGeometry=3 splitTerms=1")
+    println("TASK_FILTER_OK parser=3 webViewSplit=1 listFilters=4 threeFieldFilters=7 formRules=6 gate=8 specGeometry=3 splitTerms=1")
 }
