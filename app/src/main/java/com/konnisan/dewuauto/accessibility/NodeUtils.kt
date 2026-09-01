@@ -1,6 +1,7 @@
 package com.konnisan.dewuauto.accessibility
 
 import android.graphics.Rect
+import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import com.konnisan.dewuauto.automation.DewuSelectors
 import java.util.ArrayDeque
@@ -79,6 +80,15 @@ object NodeUtils {
             current = current!!.parent
         }
         return false
+    }
+
+    fun setText(node: AccessibilityNodeInfo?, value: String): Boolean {
+        val candidate = node ?: return false
+        if (!candidate.isEnabled || !candidate.isEditable) return false
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+        }
+        return candidate.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
     fun nearestClickableAncestor(

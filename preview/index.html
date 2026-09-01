@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>得物任务筛选预览</title>
+  <title>得物自动报名 V1</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="app-shell">
     <header class="app-bar">
       <div>
-        <h1>得物任务筛选</h1>
+        <h1>得物自动报名 V1</h1>
       </div>
       <button class="icon-button" type="button" aria-label="更多选项">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -41,8 +41,8 @@
         <circle cx="12" cy="16.4" r=".8"></circle>
       </svg>
       <div>
-        <strong>仅筛选预演，不执行报名</strong>
-        <span>所有报名与申请入驻入口均已禁用</span>
+        <strong>自动报名后无法取消</strong>
+        <span>仅在列表与详情双重筛选通过后提交；未知页面立即停止</span>
       </div>
     </section>
 
@@ -52,7 +52,7 @@
         <path d="M12 10.4v5.7"></path>
         <circle cx="12" cy="7.3" r=".8"></circle>
       </svg>
-      <span>当前账号暂未具备达人资格，可继续预览筛选规则</span>
+      <span>达人号使用“我 → 商单”快捷入口；不会点击申请入驻</span>
     </section>
 
     <form id="filterForm" class="content-section">
@@ -101,47 +101,50 @@
 
       <div class="form-row form-row-stacked">
         <label for="excluded">排除词</label>
-        <input id="excluded" value="内定，复投，直接报名，订阅提醒，定制">
-        <small>支持逗号、中文逗号或 ## 分隔</small>
+        <input id="excluded" value="内定，复投，直接报名，订阅提醒，定制，露脸，真人出镜，出镜，拍视频，视频拍摄，口播，直播">
+        <small>列表标题与任务详情的达人要求都会检查</small>
       </div>
 
       <div class="form-row form-row-stacked">
         <label for="sizeSpec">样品规格</label>
         <input id="sizeSpec" placeholder="例如：L码，42码">
-        <small>留空时不限制规格</small>
+        <small>必填；报名页优先选择第一个匹配规格</small>
       </div>
     </form>
 
     <section class="advanced-section">
       <button id="advancedToggle" class="advanced-toggle" type="button" aria-expanded="false" aria-controls="advancedPanel">
         <span>
-          <strong>高级设置</strong>
-          <small>下滑 5 次 · 刷新 2–10 秒</small>
+          <strong>循环与执行设置</strong>
+          <small>目标 1 个 · 下滑 5 次 · 作品 1 个</small>
         </span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
       </button>
       <div id="advancedPanel" class="advanced-panel" hidden>
-        <label>最大下滑次数<input inputmode="numeric" value="5"></label>
+        <label>目标报名次数<input inputmode="numeric" value="1"></label>
+        <label>每种排序下滑次数<input inputmode="numeric" value="5"></label>
         <label>刷新最小秒数<input inputmode="numeric" value="2"></label>
         <label>刷新最大秒数<input inputmode="numeric" value="10"></label>
         <label>首页作品数量<input inputmode="numeric" value="1"></label>
-        <label>休息分钟<input value="5–10"></label>
-        <label>作品滑动次数<input value="1–8"></label>
+        <label>休息分钟<input value="0–0"></label>
+        <label>图文滑动次数<input value="1–8"></label>
+        <label>视频停留秒数<input value="5–10"></label>
         <label class="full-width">卡密<input placeholder="Debug 可留空"></label>
       </div>
     </section>
 
     <section class="actions">
-      <button id="startButton" class="primary-button" type="button">开始筛选预演</button>
-      <button id="stopButton" class="secondary-button" type="button">停止预演</button>
-      <p id="runMessage" role="status">等待开始，不会操作报名按钮</p>
+      <label class="risk-ack"><input id="riskAck" type="checkbox">我已确认：任务报名后无法取消，筛选通过后允许自动提交</label>
+      <button id="startButton" class="primary-button" type="button">开始自动报名</button>
+      <button id="stopButton" class="secondary-button" type="button">停止任务</button>
+      <p id="runMessage" role="status">等待开始 · 目标 1 个报名任务</p>
     </section>
 
     <section class="results-section">
       <div class="section-heading results-heading">
         <div>
           <h2>扫描结果</h2>
-          <p>最近一次页面解析</p>
+          <p>列表筛选、详情复核与报名状态</p>
         </div>
         <button type="button" class="text-button">查看全部</button>
       </div>
@@ -149,7 +152,8 @@
       <dl class="metrics">
         <div><dt>已扫描</dt><dd id="scannedCount">18</dd></div>
         <div><dt>符合</dt><dd id="eligibleCount" class="metric-good">6</dd></div>
-        <div><dt>已排除</dt><dd id="excludedCount">12</dd></div>
+        <div><dt>已报名</dt><dd id="enrolledCount" class="metric-enrolled">0</dd></div>
+        <div><dt>已跳过</dt><dd id="excludedCount">12</dd></div>
       </dl>
 
       <div class="task-list">
@@ -164,6 +168,7 @@
               <span>现金奖励 <strong>¥100</strong></span>
               <span>16/20人</span>
               <span>15小时后截止</span>
+              <span class="enrollment-status">待详情复核</span>
             </div>
           </div>
         </article>
@@ -189,7 +194,7 @@
         <path d="M12 2.8 20 6v5.5c0 5.1-3.4 8.3-8 9.7-4.6-1.4-8-4.6-8-9.7V6l8-3.2Z"></path>
         <path d="m8.8 12.1 2.1 2.1 4.5-4.7"></path>
       </svg>
-      <span>不会点击报名或申请入驻</span>
+      <span>自动报名 V1 · 不会点击申请入驻</span>
     </footer>
   </main>
   <script src="app.js"></script>

@@ -23,4 +23,5 @@ data class PreviewTaskResult(
     val deadlineText: String,
     val eligible: Boolean,
     val reason: String,
+    val enrollmentStatus: String = "未报名",
 )

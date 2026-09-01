@@ -16,6 +16,7 @@ object DewuSelectors {
     val BRAND_CONTEXT = listOf("品牌合作", "商单")
     val BRAND_PAGE_MARKERS = listOf("综合排序", "奖励类型", "产品类目", "商单", "品牌合作")
     val TASK_DETAIL_MARKERS = listOf("任务详情", "合作详情", "拍摄要求")
+    val DETAIL_SECTION_MARKERS = listOf("达人要求", "发布要求", "合作方式", "任务要求")
     val WRONG_MORE_PAGE_MARKERS = listOf("好内容,得免单", "获取机会", "报名机会")
     val MORE = listOf("查看更多")
 
@@ -27,6 +28,16 @@ object DewuSelectors {
     const val PRODUCT_CATEGORY = "产品类目"
 
     val REGISTER_BUTTONS = listOf("立即报名", "报名")
+    const val IMMEDIATE_REGISTER = "立即报名"
+    val ENROLLMENT_FORM_MARKERS = listOf("确认报名信息", "收货地址", "样品规格")
+    const val CONFIRM_ENROLLMENT = "确认报名"
+    val IRREVERSIBLE_NOTICE_MARKERS = listOf("报名须知", "报名后无法取消")
+    const val IRREVERSIBLE_CONFIRM = "确认"
+    val ENROLLMENT_SUCCESS_MARKERS = listOf(
+        "已报名，待品牌方确认",
+        "品牌方确认报名信息中",
+        "已报名,待品牌方确认",
+    )
     val APPLY_TO_JOIN = listOf("申请入驻")
     val FILTER_CONFIRM = listOf("确定")
 

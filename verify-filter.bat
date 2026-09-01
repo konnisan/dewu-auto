@@ -13,6 +13,9 @@ java -cp "%KOTLIN_ROOT%\lib\kotlin-preloader.jar" ^
   "app\src\main\java\com\konnisan\dewuauto\config\AutomationConfig.kt" ^
   "app\src\main\java\com\konnisan\dewuauto\automation\TaskCard.kt" ^
   "app\src\main\java\com\konnisan\dewuauto\automation\TaskCardParser.kt" ^
+  "app\src\main\java\com\konnisan\dewuauto\automation\DewuSelectors.kt" ^
+  "app\src\main\java\com\konnisan\dewuauto\automation\TaskDetail.kt" ^
+  "app\src\main\java\com\konnisan\dewuauto\automation\EnrollmentFormHandler.kt" ^
   "app\src\main\java\com\konnisan\dewuauto\automation\TaskEligibilityEvaluator.kt" ^
   "verification\TaskFilterVerifier.kt" ^
   -include-runtime -d "build\verification\task-filter-verifier.jar"

@@ -34,12 +34,17 @@ object TaskEligibilityEvaluator {
             return TaskEligibility(false, "奖励不在范围内")
         }
 
-        val specs = splitTerms(config.sizeSpec)
-        if (specs.isNotEmpty() && specs.none { task.rawText.contains(it, ignoreCase = true) }) {
-            return TaskEligibility(false, "样品规格不匹配")
-        }
-
         return TaskEligibility(true, "符合筛选条件")
+    }
+
+    fun evaluateDetail(detail: TaskDetail, config: AutomationConfig): TaskEligibility {
+        val excludedWord = config.excludedWords.firstOrNull {
+            detail.rawText.contains(it, ignoreCase = true)
+        }
+        if (excludedWord != null) {
+            return TaskEligibility(false, "详情命中排除词：$excludedWord")
+        }
+        return TaskEligibility(true, "列表与详情筛选均通过")
     }
 
     internal fun splitTerms(value: String): List<String> = value

@@ -16,11 +16,14 @@ async function main() {
   }
 
   await page.locator('#startButton').click();
-  await page.getByText('预演完成：符合 6 项，已排除 12 项').waitFor();
+  await page.getByText('请先确认“报名后无法取消”').waitFor();
+  await page.locator('#riskAck').check();
+  await page.locator('#startButton').click();
+  await page.getByText('已达到目标：报名成功 1/1，自动停止').waitFor();
 
-  const forbiddenButtons = await page.locator('button').filter({ hasText: /报名|申请入驻/ }).count();
-  if (forbiddenButtons !== 0) {
-    throw new Error(`发现 ${forbiddenButtons} 个报名或申请入驻按钮`);
+  const applyToJoinButtons = await page.locator('button').filter({ hasText: /申请入驻/ }).count();
+  if (applyToJoinButtons !== 0) {
+    throw new Error(`发现 ${applyToJoinButtons} 个申请入驻按钮`);
   }
 
   await page.screenshot({
@@ -28,7 +31,7 @@ async function main() {
     fullPage: true,
   });
 
-  console.log('PREVIEW_OK advanced=visible result=completed forbiddenButtons=0');
+  console.log('PREVIEW_OK execution=expanded riskAck=required result=targetReached applyToJoinButtons=0');
   await browser.close();
 }
 

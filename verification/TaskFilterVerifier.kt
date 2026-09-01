@@ -1,5 +1,7 @@
 import com.konnisan.dewuauto.automation.TaskCardParser
 import com.konnisan.dewuauto.automation.TaskEligibilityEvaluator
+import com.konnisan.dewuauto.automation.TaskDetailParser
+import com.konnisan.dewuauto.automation.EnrollmentFormHandler
 import com.konnisan.dewuauto.config.AutomationConfig
 
 fun main() {
@@ -43,16 +45,35 @@ fun main() {
     )
     check(acceptedResult.eligible)
 
-    val wrongSizeResult = TaskEligibilityEvaluator.evaluate(
+    val sizeNotRequiredOnCard = TaskEligibilityEvaluator.evaluate(
         sampleTask,
         AutomationConfig(excludedWords = emptyList(), sizeSpec = "42码"),
     )
-    check(!wrongSizeResult.eligible && wrongSizeResult.reason == "样品规格不匹配")
+    check(sizeNotRequiredOnCard.eligible)
+
+    val blockedDetail = requireNotNull(
+        TaskDetailParser.parse("任务详情 | 配件体验任务 | 达人要求 | 需要真人露脸拍视频 | 发布要求"),
+    )
+    val blockedDetailResult = TaskEligibilityEvaluator.evaluateDetail(blockedDetail, AutomationConfig())
+    check(!blockedDetailResult.eligible && blockedDetailResult.reason.contains("露脸"))
+
+    val acceptedDetail = requireNotNull(
+        TaskDetailParser.parse("任务详情 | 配件体验任务 | 达人要求 | 无特殊要求 | 图文发布"),
+    )
+    check(TaskEligibilityEvaluator.evaluateDetail(acceptedDetail, AutomationConfig()).eligible)
+
+    val enrollmentForm = "确认报名信息 | 收货地址 | 张三 13800000000 某地址 | 样品规格 | 均码 | 确认报名"
+    check(EnrollmentFormHandler.isEnrollmentForm(enrollmentForm))
+    check(EnrollmentFormHandler.hasSelectedAddress(enrollmentForm))
+    check(EnrollmentFormHandler.hasConfiguredSpec(enrollmentForm, "均码，L码"))
+    check(!EnrollmentFormHandler.hasSelectedAddress("确认报名信息 | 收货地址 | 请选择收货地址"))
+    check(EnrollmentFormHandler.isIrreversibleNotice("报名须知 | 任务报名后无法取消 | 取消 | 确认"))
+    check(EnrollmentFormHandler.isEnrollmentSuccess("待确认 | 已报名，待品牌方确认"))
 
     check(
         TaskEligibilityEvaluator.splitTerms("内定##复投##直接报名") ==
             listOf("内定", "复投", "直接报名"),
     )
 
-    println("TASK_FILTER_OK parser=2 full=1 excluded=1 accepted=1 sizeMismatch=1 splitTerms=1")
+    println("TASK_FILTER_OK parser=2 listFilters=4 detailFilters=2 formRules=6 splitTerms=1")
 }

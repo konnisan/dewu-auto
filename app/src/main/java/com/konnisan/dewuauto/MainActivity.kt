@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -38,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvScannedCount: TextView
     private lateinit var tvEligibleCount: TextView
     private lateinit var tvExcludedCount: TextView
+    private lateinit var tvEnrollmentSuccessCount: TextView
     private lateinit var tvResultOne: TextView
     private lateinit var tvResultTwo: TextView
     private lateinit var tvAdvancedSummary: TextView
@@ -45,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var advancedChevron: ImageView
     private lateinit var spCategory: Spinner
     private lateinit var spSortMode: Spinner
+    private lateinit var cbIrreversibleAck: CheckBox
 
     private val uiTicker = object : Runnable {
         override fun run() {
@@ -84,6 +87,7 @@ class MainActivity : AppCompatActivity() {
         tvScannedCount = findViewById(R.id.tvScannedCount)
         tvEligibleCount = findViewById(R.id.tvEligibleCount)
         tvExcludedCount = findViewById(R.id.tvExcludedCount)
+        tvEnrollmentSuccessCount = findViewById(R.id.tvEnrollmentSuccessCount)
         tvResultOne = findViewById(R.id.tvResultOne)
         tvResultTwo = findViewById(R.id.tvResultTwo)
         tvAdvancedSummary = findViewById(R.id.tvAdvancedSummary)
@@ -91,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         advancedChevron = findViewById(R.id.ivAdvancedChevron)
         spCategory = findViewById(R.id.spCategory)
         spSortMode = findViewById(R.id.spSortMode)
+        cbIrreversibleAck = findViewById(R.id.cbIrreversibleAck)
     }
 
     private fun setupActions() {
@@ -107,11 +112,11 @@ class MainActivity : AppCompatActivity() {
             if (!DewuLauncher.launch(this)) toast("未检测到得物")
         }
         findViewById<Button>(R.id.btnStart).setOnClickListener {
-            startPreview()
+            startAutomation()
         }
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             DewuAccessibilityService.instance?.stopAutomation()
-            toast("已停止筛选预演")
+            toast("已停止自动报名任务")
         }
     }
 
@@ -128,9 +133,9 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun startPreview() {
+    private fun startAutomation() {
         if (!AccessibilityStatus.isEnabled(this)) {
-            toast("请先开启“得物任务筛选服务”无障碍权限")
+            toast("请先开启“得物自动报名服务”无障碍权限")
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
@@ -141,7 +146,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (!cbIrreversibleAck.isChecked) {
+            toast("请先确认“报名后无法取消”")
+            return
+        }
         val config = readConfig().normalized()
+        if (config.sizeSpec.isBlank()) {
+            toast("请填写样品规格，避免报名时误选")
+            return
+        }
         prefs.save(config)
         updateAdvancedSummary(config)
         service.startAutomation(config)
@@ -152,19 +165,22 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        toast("筛选预演已启动，不会执行报名")
+        toast("自动报名已启动；达到目标次数后停止")
     }
 
     private fun readConfig(): AutomationConfig = AutomationConfig(
         cardKey = text(R.id.etCardKey),
         productCategory = spCategory.selectedItem?.toString() ?: "服装",
         sortMode = spSortMode.selectedItem?.toString() ?: "最近发布",
+        targetEnrollmentCount = intValue(R.id.etTargetEnrollments, 1),
         maxListScrolls = intValue(R.id.etMaxScrolls, 5),
         homeBrowseCount = intValue(R.id.etHomeBrowseCount, 1),
         restMinMinutes = intValue(R.id.etRestMin, 5),
         restMaxMinutes = intValue(R.id.etRestMax, 10),
         imageSwipeMin = intValue(R.id.etImageSwipeMin, 1),
         imageSwipeMax = intValue(R.id.etImageSwipeMax, 8),
+        videoStayMinSeconds = intValue(R.id.etVideoStayMin, 5),
+        videoStayMaxSeconds = intValue(R.id.etVideoStayMax, 10),
         minPrice = doubleValue(R.id.etMinPrice, 21.0),
         maxPrice = doubleValue(R.id.etMaxPrice, 9_999_999.0),
         excludedWords = text(R.id.etExcludedWords)
@@ -180,12 +196,15 @@ class MainActivity : AppCompatActivity() {
         setText(R.id.etCardKey, config.cardKey)
         selectSpinner(spCategory, config.productCategory)
         selectSpinner(spSortMode, config.sortMode)
+        setText(R.id.etTargetEnrollments, config.targetEnrollmentCount)
         setText(R.id.etMaxScrolls, config.maxListScrolls)
         setText(R.id.etHomeBrowseCount, config.homeBrowseCount)
         setText(R.id.etRestMin, config.restMinMinutes)
         setText(R.id.etRestMax, config.restMaxMinutes)
         setText(R.id.etImageSwipeMin, config.imageSwipeMin)
         setText(R.id.etImageSwipeMax, config.imageSwipeMax)
+        setText(R.id.etVideoStayMin, config.videoStayMinSeconds)
+        setText(R.id.etVideoStayMax, config.videoStayMaxSeconds)
         setText(R.id.etMinPrice, config.minPrice)
         setText(R.id.etMaxPrice, config.maxPrice)
         setText(R.id.etExcludedWords, config.excludedWords.joinToString(","))
@@ -202,7 +221,7 @@ class MainActivity : AppCompatActivity() {
         tvDewuVersion.text = dewuVersion()?.let { "得物  $it" } ?: "得物  未检测"
 
         val screen = ScreenInfo.from(this)
-        tvScreen.text = "${screen.widthPx} × ${screen.heightPx} · 不会点击报名或申请入驻"
+        tvScreen.text = "${screen.widthPx} × ${screen.heightPx} · 自动报名 V1 · 不点击申请入驻"
 
         val runtime = DewuAccessibilityService.instance?.snapshot()
         if (runtime == null) {
@@ -217,11 +236,12 @@ class MainActivity : AppCompatActivity() {
         tvRuntimeStatus.text = "${runtime.state} · ${runtime.lastMessage}"
         tvScannedCount.text = "已扫描\n${runtime.scannedCount}"
         tvEligibleCount.text = "符合\n${runtime.eligibleCount}"
-        tvExcludedCount.text = "已排除\n${runtime.excludedCount}"
+        tvExcludedCount.text = "已跳过\n${runtime.excludedCount + runtime.enrollmentFailedCount}"
+        tvEnrollmentSuccessCount.text = "已报名\n${runtime.enrollmentSuccessCount}"
         tvAccountNotice.text = if (runtime.requiresCreatorEnrollment) {
-            "已检测到“申请入驻”，当前账号按非达人模式安全预演"
+            "当前页面仅显示“申请入驻”，任务已安全停止"
         } else {
-            "当前账号可继续预览筛选规则；不会提交报名或入驻申请"
+            "达人号商单模式 · 详情复筛通过后自动报名"
         }
 
         bindResult(tvResultOne, runtime.recentResults.getOrNull(0))
@@ -247,12 +267,13 @@ class MainActivity : AppCompatActivity() {
             append(" · ").append(result.capacityText)
             append(" · ").append(result.deadlineText)
             append('\n').append(result.reason)
+            append(" · ").append(result.enrollmentStatus)
         }
     }
 
     private fun updateAdvancedSummary(config: AutomationConfig) {
         tvAdvancedSummary.text =
-            "下滑 ${config.maxListScrolls} 次 · 刷新 ${config.refreshMinSeconds}–${config.refreshMaxSeconds} 秒"
+            "目标 ${config.targetEnrollmentCount} 个 · 下滑 ${config.maxListScrolls} 次 · 作品 ${config.homeBrowseCount} 个"
     }
 
     @Suppress("DEPRECATION")

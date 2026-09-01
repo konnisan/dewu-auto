@@ -330,6 +330,26 @@ button {
   gap: 10px;
 }
 
+.risk-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid #f0cf9d;
+  border-radius: 8px;
+  background: var(--amber-soft);
+  color: #8d5c25;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.risk-ack input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--amber);
+}
+
 .primary-button,
 .secondary-button {
   min-height: 50px;
@@ -387,7 +407,7 @@ button {
 .metrics {
   margin: 18px 0 12px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .metrics div {
@@ -414,6 +434,12 @@ button {
 
 .metrics .metric-good {
   color: var(--green);
+}
+
+.metrics .metric-enrolled,
+.enrollment-status {
+  color: var(--accent-dark);
+  font-weight: 650;
 }
 
 .task-list {

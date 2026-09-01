@@ -19,7 +19,7 @@ class AutomationController(
     companion object {
         private const val TAG = "DewuAuto"
         private const val BASE_TICK_MS = 700L
-        private const val MAX_ACTIONS_PER_RUN = 500
+        private const val MAX_ACTIONS_PER_RUN = 2_000
         private const val HOME_DIAGNOSTIC_INTERVAL_MS = 5_000L
         private const val PAGE_TIMEOUT_MS = 20_000L
         private const val MAX_RECENT_RESULTS = 4
@@ -31,6 +31,12 @@ class AutomationController(
     private val runtime = AutomationRuntime()
     private val visitedTaskSignatures = LinkedHashSet<String>()
 
+    private data class EnrollmentCandidate(
+        val task: TaskCard,
+        val result: PreviewTaskResult,
+        val registerNode: AccessibilityNodeInfo,
+    )
+
     private var config = AutomationConfig()
     private var running = false
     private var sortMenuOpened = false
@@ -41,6 +47,11 @@ class AutomationController(
     private var notBeforeAt = 0L
     private var lastPokeAt = 0L
     private var lastHomeDiagnosticAt = 0L
+    private var currentTaskSignature: String? = null
+    private var returnBackAttempts = 0
+    private var contentSwipeTarget = 0
+    private var contentSwipeCount = 0
+    private var contentStayUntil = 0L
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -56,10 +67,15 @@ class AutomationController(
         config = rawConfig.normalized()
         runtime.state = AutomationState.VERIFYING_LICENSE
         runtime.listScrollCount = 0
+        runtime.sortPhase = SortPhase.RECENT
+        runtime.roundCount = 0
+        runtime.homeBrowsedCount = 0
         runtime.scannedCount = 0
         runtime.eligibleCount = 0
         runtime.excludedCount = 0
         runtime.parseFailedCount = 0
+        runtime.enrollmentSuccessCount = 0
+        runtime.enrollmentFailedCount = 0
         runtime.requiresCreatorEnrollment = false
         runtime.recentResults = emptyList()
         runtime.actionCount = 0
@@ -73,6 +89,11 @@ class AutomationController(
         notBeforeAt = 0L
         lastPokeAt = 0L
         lastHomeDiagnosticAt = 0L
+        currentTaskSignature = null
+        returnBackAttempts = 0
+        contentSwipeTarget = 0
+        contentSwipeCount = 0
+        contentStayUntil = 0L
         running = true
         enterState(AutomationState.VERIFYING_LICENSE, "验证卡密")
 
@@ -138,10 +159,24 @@ class AutomationController(
             AutomationState.WAITING_PROFILE -> handleWaitingProfile(root)
             AutomationState.OPENING_BRAND_COOPERATION -> handleOpenBrand(root)
             AutomationState.WAITING_BRAND_PAGE -> handleWaitingBrandPage(root)
-            AutomationState.APPLYING_INITIAL_SORT -> handleSort(root)
+            AutomationState.APPLYING_INITIAL_SORT,
+            AutomationState.APPLYING_SECONDARY_SORT -> handleSort(root)
             AutomationState.APPLYING_CATEGORY -> handleCategory(root)
             AutomationState.SCANNING_TASKS -> handleScanTasks(root)
             AutomationState.SCROLLING_TASKS -> handleScrollTasks()
+            AutomationState.OPENING_TASK_DETAIL -> handleOpeningTaskDetail(root)
+            AutomationState.VALIDATING_TASK_DETAIL -> handleValidatingTaskDetail(root)
+            AutomationState.OPENING_ENROLLMENT_FORM -> handleOpeningEnrollmentForm(root)
+            AutomationState.FILLING_ENROLLMENT_FORM -> handleFillingEnrollmentForm(root)
+            AutomationState.SUBMITTING_ENROLLMENT_FORM -> handleSubmittingEnrollmentForm(root)
+            AutomationState.CONFIRMING_IRREVERSIBLE_NOTICE -> handleIrreversibleNotice(root)
+            AutomationState.VERIFYING_ENROLLMENT_RESULT -> handleEnrollmentResult(root)
+            AutomationState.RETURNING_TO_TASK_LIST -> handleReturnToTaskList(root)
+            AutomationState.RETURNING_HOME -> handleReturningHome(root)
+            AutomationState.BROWSING_HOME -> handleBrowsingHome(root)
+            AutomationState.BROWSING_CONTENT -> handleBrowsingContent(root)
+            AutomationState.RETURNING_FROM_CONTENT -> handleReturningFromContent(root)
+            AutomationState.RESTING_BETWEEN_ROUNDS -> handleRestingBetweenRounds(root)
         }
     }
 
@@ -204,6 +239,20 @@ class AutomationController(
         if (!isDewuRoot(root)) return
 
         if (brandEntryStep == 0) {
+            // 5.89 等旧版达人号会在“我”页直接暴露“商单”入口，没有可访问的
+            // “创作中心/查看更多”节点。这里只进入任务列表，不触碰任务报名按钮。
+            val directBrandEntry = NodeUtils.findFirstByTexts(root, DewuSelectors.BRAND_CONTEXT)
+            if (directBrandEntry != null) {
+                if (NodeUtils.clickNode(directBrandEntry)) {
+                    brandEntryStep = 1
+                    touchAction("点击达人号商单快捷入口")
+                    enterState(AutomationState.WAITING_BRAND_PAGE, "等待商单页面")
+                } else if (elapsedInState() > PAGE_TIMEOUT_MS) {
+                    fail("达人号商单快捷入口不可点击，已停止且不改走其它入口")
+                }
+                return
+            }
+
             val creationCenter = NodeUtils.findFirstByTexts(root, DewuSelectors.CREATION_CENTER)
             if (NodeUtils.clickNode(creationCenter)) {
                 brandEntryStep = 1
@@ -252,28 +301,43 @@ class AutomationController(
 
         runtime.requiresCreatorEnrollment = NodeUtils.hasAnyText(root, DewuSelectors.APPLY_TO_JOIN)
         sortMenuOpened = false
-        enterState(AutomationState.APPLYING_INITIAL_SORT, "设置排序：${config.sortMode}")
+        runtime.sortPhase = SortPhase.RECENT
+        runtime.listScrollCount = 0
+        sortMenuOpened = false
+        enterState(AutomationState.APPLYING_INITIAL_SORT, "首轮排序：${DewuSelectors.SORT_RECENT}")
     }
 
     private fun handleSort(root: AccessibilityNodeInfo?) {
         if (root == null || !isBrandPage(root)) return
+        val initial = runtime.state == AutomationState.APPLYING_INITIAL_SORT
+        val targetSort = if (initial) DewuSelectors.SORT_RECENT else config.sortMode
+        if (!initial && targetSort == DewuSelectors.SORT_RECENT) {
+            runtime.sortPhase = SortPhase.CONFIGURED
+            runtime.listScrollCount = 0
+            enterState(AutomationState.SCANNING_TASKS, "继续按最近发布扫描")
+            return
+        }
         if (!sortMenuOpened) {
-            val current = NodeUtils.findFirstByTexts(root, DewuSelectors.SORT_ENTRY)
-            if (NodeUtils.clickNode(current)) {
+            val current = findVisibleNodeByTexts(root, DewuSelectors.SORT_ENTRY)
+            if (activateNode(current, "打开排序菜单")) {
                 sortMenuOpened = true
-                touchAction("打开排序菜单")
             }
             return
         }
 
-        val targetNode = NodeUtils.findFirstByTexts(root, listOf(config.sortMode))
-        if (NodeUtils.clickNode(targetNode)) {
-            touchAction("选择排序：${config.sortMode}")
+        val targetNode = findBottommostVisibleNodeByText(root, targetSort)
+        if (activateNode(targetNode, "选择排序：$targetSort")) {
             delayByRefreshWindow()
             sortMenuOpened = false
             runtime.listScrollCount = 0
-            categoryStep = 0
-            enterState(AutomationState.APPLYING_CATEGORY, "设置产品类目：${config.productCategory}")
+            if (initial) {
+                runtime.sortPhase = SortPhase.RECENT
+                categoryStep = 0
+                enterState(AutomationState.APPLYING_CATEGORY, "设置产品类目：${config.productCategory}")
+            } else {
+                runtime.sortPhase = SortPhase.CONFIGURED
+                enterState(AutomationState.SCANNING_TASKS, "按${targetSort}继续扫描")
+            }
         } else if (elapsedInState() > 5_000L) {
             sortMenuOpened = false
             stateEnteredAt = SystemClock.elapsedRealtime()
@@ -284,26 +348,36 @@ class AutomationController(
         if (root == null || !isBrandPage(root)) return
         when (categoryStep) {
             0 -> {
+                val selectedCategory = findVisibleNodeByTexts(root, listOf(config.productCategory))
+                val selectedBounds = NodeUtils.bounds(selectedCategory)
+                val screen = ScreenInfo.from(service)
+                if (selectedBounds != null && selectedBounds.centerY() < screen.heightPx * 0.5f) {
+                    runtime.listScrollCount = 0
+                    enterState(AutomationState.SCANNING_TASKS, "产品类目已是${config.productCategory}，扫描当前页")
+                    return
+                }
                 if (clickText(root, listOf(DewuSelectors.PRODUCT_CATEGORY), "打开产品类目")) {
                     categoryStep = 1
+                    notBeforeAt = SystemClock.elapsedRealtime() + 900L
                     return
                 }
                 performHorizontalSwipe(left = true, label = "筛选栏左滑")
             }
 
             1 -> {
-                val categoryNode = NodeUtils.findFirstByTexts(root, listOf(config.productCategory))
-                if (NodeUtils.clickNode(categoryNode)) {
-                    touchAction("选择类目：${config.productCategory}")
+                val categoryNode = findVisibleNodeByTexts(root, listOf(config.productCategory))
+                if (activateNode(categoryNode, "选择类目：${config.productCategory}")) {
+                    categoryStep = 2
+                    stateEnteredAt = SystemClock.elapsedRealtime()
+                } else if (elapsedInState() > 900L && tapCategoryMenuRow(config.productCategory)) {
                     categoryStep = 2
                     stateEnteredAt = SystemClock.elapsedRealtime()
                 }
             }
 
             else -> {
-                val confirmNode = NodeUtils.findFirstByTexts(root, DewuSelectors.FILTER_CONFIRM)
-                if (NodeUtils.clickNode(confirmNode)) {
-                    touchAction("确认产品类目筛选")
+                val confirmNode = findVisibleNodeByTexts(root, DewuSelectors.FILTER_CONFIRM)
+                if (activateNode(confirmNode, "确认产品类目筛选")) {
                     delayByRefreshWindow()
                     runtime.listScrollCount = 0
                     enterState(AutomationState.SCANNING_TASKS, "扫描当前页任务")
@@ -319,10 +393,26 @@ class AutomationController(
         if (root == null || !isBrandPage(root)) return
         runtime.requiresCreatorEnrollment = NodeUtils.hasAnyText(root, DewuSelectors.APPLY_TO_JOIN)
 
-        val newResults = scanVisibleTasks(root)
+        val (newResults, candidate) = scanVisibleTasks(root)
         if (newResults.isEmpty() && runtime.scannedCount == 0 && runtime.requiresCreatorEnrollment) {
             finish("当前账号仅显示申请入驻，未发现可解析任务")
             return
+        }
+
+        if (candidate != null) {
+            currentTaskSignature = candidate.result.signature
+            if (activateEnrollmentNode(
+                    candidate.registerNode,
+                    expectedText = "报名",
+                    allowedStates = setOf(AutomationState.SCANNING_TASKS),
+                    label = "打开任务：${candidate.task.title}",
+                )
+            ) {
+                enterState(AutomationState.OPENING_TASK_DETAIL, "等待任务详情")
+                return
+            }
+            updateCurrentResult("报名入口不可点击", "打开失败")
+            runtime.enrollmentFailedCount++
         }
 
         runtime.lastMessage = if (newResults.isEmpty()) {
@@ -333,18 +423,21 @@ class AutomationController(
         enterState(AutomationState.SCROLLING_TASKS, runtime.lastMessage)
     }
 
-    private fun scanVisibleTasks(root: AccessibilityNodeInfo): List<PreviewTaskResult> {
+    private fun scanVisibleTasks(root: AccessibilityNodeInfo): Pair<List<PreviewTaskResult>, EnrollmentCandidate?> {
         val registerNodes = NodeUtils.findAllByTexts(root, DewuSelectors.REGISTER_BUTTONS)
-            .filter { nodeLabel(it) in DewuSelectors.REGISTER_BUTTONS }
+            .filter { nodeLabel(it) == "报名" && isVisible(it) }
         val capacityNodes = NodeUtils.findAll(root) { node ->
             val label = nodeLabel(node)
             TASK_CAPACITY_PATTERN.containsMatchIn(label)
         }
         val cardRoots = buildList {
-            registerNodes.mapNotNullTo(this) { NodeUtils.nearestClickableAncestor(it, maxLevels = 6) }
+            registerNodes.mapNotNullTo(this) {
+                findTaskCardRoot(it) ?: NodeUtils.nearestClickableAncestor(it, maxLevels = 6)
+            }
             capacityNodes.mapNotNullTo(this) { findTaskCardRoot(it) }
         }
         val results = mutableListOf<PreviewTaskResult>()
+        var candidate: EnrollmentCandidate? = null
 
         for (cardRoot in cardRoots) {
             val rawText = NodeUtils.collectText(cardRoot, maxNodes = 100)
@@ -374,6 +467,14 @@ class AutomationController(
             results += result
             runtime.scannedCount++
             if (result.eligible) runtime.eligibleCount++ else runtime.excludedCount++
+
+            if (eligibility.eligible && candidate == null) {
+                val registerNode = registerNodes.firstOrNull { node ->
+                    val nodeRoot = findTaskCardRoot(node)
+                    nodeRoot != null && NodeUtils.collectText(nodeRoot, 100) == rawText
+                }
+                if (registerNode != null) candidate = EnrollmentCandidate(task, result, registerNode)
+            }
         }
 
         if (results.isNotEmpty()) {
@@ -381,7 +482,7 @@ class AutomationController(
                 .distinctBy(PreviewTaskResult::signature)
                 .take(MAX_RECENT_RESULTS)
         }
-        return results
+        return results to candidate
     }
 
     private fun findTaskCardRoot(seed: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -397,6 +498,16 @@ class AutomationController(
         return null
     }
 
+    private fun tapCategoryMenuRow(category: String): Boolean {
+        val index = DewuSelectors.PRODUCT_CATEGORIES.indexOf(category)
+        if (index < 0) return false
+        val screen = ScreenInfo.from(service)
+        val x = screen.widthPx * 0.5f
+        val firstRowY = screen.heightPx * 0.161f
+        val rowSpacing = screen.heightPx * 0.045f
+        return performTap(x, firstRowY + rowSpacing * index, "选择类目：$category（菜单行）")
+    }
+
     private fun handleScrollTasks() {
         if (runtime.listScrollCount < config.maxListScrolls) {
             runtime.listScrollCount++
@@ -407,10 +518,290 @@ class AutomationController(
             return
         }
 
-        finish(
-            "预演完成：扫描 ${runtime.scannedCount}，符合 ${runtime.eligibleCount}，" +
-                "排除 ${runtime.excludedCount}，解析失败 ${runtime.parseFailedCount}",
-        )
+        if (runtime.sortPhase == SortPhase.RECENT) {
+            sortMenuOpened = false
+            runtime.listScrollCount = 0
+            enterState(AutomationState.APPLYING_SECONDARY_SORT, "切换排序：${config.sortMode}")
+        } else {
+            returnBackAttempts = 0
+            enterState(AutomationState.RETURNING_HOME, "本轮商单完成，返回首页")
+        }
+    }
+
+    private fun handleOpeningTaskDetail(root: AccessibilityNodeInfo?) {
+        if (isTaskDetail(root)) {
+            enterState(AutomationState.VALIDATING_TASK_DETAIL, "校验任务详情与达人要求")
+            return
+        }
+        if (elapsedInState() > PAGE_TIMEOUT_MS) {
+            abandonCurrentTask("未识别到任务详情", "详情打开失败")
+        }
+    }
+
+    private fun handleValidatingTaskDetail(root: AccessibilityNodeInfo?) {
+        if (!isTaskDetail(root)) return
+        val rawText = NodeUtils.collectText(root, maxNodes = 400)
+        val detail = TaskDetailParser.parse(rawText)
+        if (detail == null) {
+            abandonCurrentTask("任务详情解析失败", "详情解析失败")
+            return
+        }
+        val eligibility = TaskEligibilityEvaluator.evaluateDetail(detail, config)
+        if (!eligibility.eligible) {
+            runtime.excludedCount++
+            updateCurrentResult(eligibility.reason, "详情排除", eligible = false)
+            returnBackAttempts = 0
+            performBack("详情命中排除词，返回商单")
+            enterState(AutomationState.RETURNING_TO_TASK_LIST, eligibility.reason)
+            return
+        }
+
+        val button = findVisibleNodeByTexts(root, listOf(DewuSelectors.IMMEDIATE_REGISTER))
+        if (activateEnrollmentNode(
+                button,
+                expectedText = DewuSelectors.IMMEDIATE_REGISTER,
+                allowedStates = setOf(AutomationState.VALIDATING_TASK_DETAIL),
+                label = "详情复筛通过，进入报名信息",
+            )
+        ) {
+            enterState(AutomationState.OPENING_ENROLLMENT_FORM, "等待确认报名信息")
+        } else if (elapsedInState() > PAGE_TIMEOUT_MS) {
+            abandonCurrentTask("详情页没有可用的立即报名按钮", "无报名入口")
+        }
+    }
+
+    private fun handleOpeningEnrollmentForm(root: AccessibilityNodeInfo?) {
+        val rawText = NodeUtils.collectText(root, maxNodes = 350)
+        if (EnrollmentFormHandler.isEnrollmentForm(rawText)) {
+            enterState(AutomationState.FILLING_ENROLLMENT_FORM, "校验地址并填写样品规格")
+            return
+        }
+        if (elapsedInState() > PAGE_TIMEOUT_MS) {
+            abandonCurrentTask("未进入确认报名信息页", "报名信息页打开失败")
+        }
+    }
+
+    private fun handleFillingEnrollmentForm(root: AccessibilityNodeInfo?) {
+        if (root == null) return
+        val rawText = NodeUtils.collectText(root, maxNodes = 400)
+        if (!EnrollmentFormHandler.isEnrollmentForm(rawText)) return
+        if (!EnrollmentFormHandler.hasSelectedAddress(rawText)) {
+            abandonCurrentTask("未检测到已选择的收货地址", "缺少收货地址")
+            return
+        }
+
+        val specs = TaskEligibilityEvaluator.splitTerms(config.sizeSpec)
+        if (specs.isEmpty()) {
+            abandonCurrentTask("未配置样品规格，为避免误选已跳过", "缺少样品规格")
+            return
+        }
+
+        val targetSpec = specs.first()
+        val specNode = findVisibleNodeByTexts(root, specs)
+        val specHandled = when {
+            specNode != null && nodeLabel(specNode) in specs -> activateNode(specNode, "选择样品规格：${nodeLabel(specNode)}")
+            else -> {
+                val editable = NodeUtils.findAll(root) { it.isEditable && it.isEnabled }
+                    .firstOrNull(::isVisible)
+                NodeUtils.setText(editable, targetSpec).also { if (it) touchAction("填写样品规格：$targetSpec") }
+            }
+        }
+        if (!specHandled) {
+            abandonCurrentTask("没有找到可填写的样品规格控件", "规格填写失败")
+            return
+        }
+        notBeforeAt = SystemClock.elapsedRealtime() + 700L
+        enterState(AutomationState.SUBMITTING_ENROLLMENT_FORM, "样品规格已填写，准备确认报名")
+    }
+
+    private fun handleSubmittingEnrollmentForm(root: AccessibilityNodeInfo?) {
+        val rawText = NodeUtils.collectText(root, maxNodes = 400)
+        if (!EnrollmentFormHandler.isEnrollmentForm(rawText)) return
+        val button = findVisibleNodeByTexts(root, listOf(DewuSelectors.CONFIRM_ENROLLMENT))
+        if (activateEnrollmentNode(
+                button,
+                expectedText = DewuSelectors.CONFIRM_ENROLLMENT,
+                allowedStates = setOf(AutomationState.SUBMITTING_ENROLLMENT_FORM),
+                label = "提交报名信息",
+            )
+        ) {
+            enterState(AutomationState.CONFIRMING_IRREVERSIBLE_NOTICE, "等待报名须知确认")
+        } else if (elapsedInState() > PAGE_TIMEOUT_MS) {
+            abandonCurrentTask("确认报名按钮不可用", "报名提交失败")
+        }
+    }
+
+    private fun handleIrreversibleNotice(root: AccessibilityNodeInfo?) {
+        val rawText = NodeUtils.collectText(root, maxNodes = 400)
+        if (!EnrollmentFormHandler.isIrreversibleNotice(rawText)) {
+            if (elapsedInState() > PAGE_TIMEOUT_MS) {
+                abandonCurrentTask("未识别到标准“报名后无法取消”确认弹窗", "报名须知异常")
+            }
+            return
+        }
+        val confirm = findBottommostVisibleNodeByText(root, DewuSelectors.IRREVERSIBLE_CONFIRM)
+        if (activateEnrollmentNode(
+                confirm,
+                expectedText = DewuSelectors.IRREVERSIBLE_CONFIRM,
+                allowedStates = setOf(AutomationState.CONFIRMING_IRREVERSIBLE_NOTICE),
+                label = "确认报名须知（报名后无法取消）",
+            )
+        ) {
+            enterState(AutomationState.VERIFYING_ENROLLMENT_RESULT, "等待报名结果")
+        }
+    }
+
+    private fun handleEnrollmentResult(root: AccessibilityNodeInfo?) {
+        val rawText = NodeUtils.collectText(root, maxNodes = 400)
+        if (EnrollmentFormHandler.isEnrollmentSuccess(rawText)) {
+            runtime.enrollmentSuccessCount++
+            updateCurrentResult("报名成功，待品牌方确认", "已报名")
+            if (runtime.enrollmentSuccessCount >= config.targetEnrollmentCount) {
+                finish("已完成 ${runtime.enrollmentSuccessCount}/${config.targetEnrollmentCount} 个报名任务")
+                return
+            }
+            returnBackAttempts = 0
+            performBack("报名成功，返回商单继续")
+            enterState(AutomationState.RETURNING_TO_TASK_LIST, "报名成功，返回商单列表")
+            return
+        }
+        if (elapsedInState() > PAGE_TIMEOUT_MS) {
+            fail("已确认不可取消报名，但未识别到明确成功结果；为防止重复报名已停止")
+        }
+    }
+
+    private fun handleReturnToTaskList(root: AccessibilityNodeInfo?) {
+        if (isBrandPage(root)) {
+            currentTaskSignature = null
+            returnBackAttempts = 0
+            enterState(AutomationState.SCROLLING_TASKS, "已返回商单，继续查找")
+            return
+        }
+        if (elapsedInState() > 1_200L && returnBackAttempts < 4) {
+            returnBackAttempts++
+            performBack("返回商单列表 ${returnBackAttempts}/4")
+            stateEnteredAt = SystemClock.elapsedRealtime()
+        } else if (returnBackAttempts >= 4 && elapsedInState() > PAGE_TIMEOUT_MS) {
+            fail("连续返回后仍未识别到商单列表")
+        }
+    }
+
+    private fun handleReturningHome(root: AccessibilityNodeInfo?) {
+        if (isHome(root)) {
+            runtime.homeBrowsedCount = 0
+            if (config.homeBrowseCount == 0) beginNextRound() else enterState(AutomationState.BROWSING_HOME, "浏览首页作品")
+            return
+        }
+        if (elapsedInState() > 1_200L) {
+            performBack("返回得物首页")
+            stateEnteredAt = SystemClock.elapsedRealtime()
+            returnBackAttempts++
+            if (returnBackAttempts > 6) fail("无法返回得物首页")
+        }
+    }
+
+    private fun handleBrowsingHome(root: AccessibilityNodeInfo?) {
+        if (!isHome(root)) return
+        val screen = ScreenInfo.from(service)
+        val column = if (kotlin.random.Random.nextBoolean()) 0.27f else 0.73f
+        val row = if (kotlin.random.Random.nextBoolean()) 0.43f else 0.64f
+        if (performTap(screen.widthPx * column, screen.heightPx * row, "随机打开首页作品")) {
+            contentSwipeTarget = 0
+            contentSwipeCount = 0
+            contentStayUntil = 0L
+            notBeforeAt = SystemClock.elapsedRealtime() + 1_000L
+            enterState(AutomationState.BROWSING_CONTENT, "识别作品类型")
+        }
+    }
+
+    private fun handleBrowsingContent(root: AccessibilityNodeInfo?) {
+        if (!isDewuRoot(root)) return
+        val now = SystemClock.elapsedRealtime()
+        val isImage = NodeUtils.hasAnyText(root, DewuSelectors.IMAGE_MARKERS)
+        if (isImage) {
+            if (contentSwipeTarget == 0) {
+                contentSwipeTarget = randomBetween(config.imageSwipeMin, config.imageSwipeMax)
+            }
+            if (contentSwipeCount < contentSwipeTarget) {
+                contentSwipeCount++
+                performContentHorizontalSwipe(left = kotlin.random.Random.nextBoolean(), label = "浏览图文 ${contentSwipeCount}/$contentSwipeTarget")
+                notBeforeAt = now + randomBetween(1, 3) * 1_000L
+                return
+            }
+        } else {
+            if (contentStayUntil == 0L) {
+                contentStayUntil = now + randomBetween(config.videoStayMinSeconds, config.videoStayMaxSeconds) * 1_000L
+                runtime.lastMessage = "视频/未知作品随机停留"
+            }
+            if (now < contentStayUntil) return
+        }
+        performBack("作品浏览完成，返回首页")
+        enterState(AutomationState.RETURNING_FROM_CONTENT, "等待返回首页")
+    }
+
+    private fun handleReturningFromContent(root: AccessibilityNodeInfo?) {
+        if (isHome(root)) {
+            runtime.homeBrowsedCount++
+            if (runtime.homeBrowsedCount >= config.homeBrowseCount) beginNextRound()
+            else enterState(AutomationState.BROWSING_HOME, "继续浏览首页作品")
+            return
+        }
+        if (elapsedInState() > 4_000L) {
+            performBack("继续返回首页")
+            stateEnteredAt = SystemClock.elapsedRealtime()
+        }
+    }
+
+    private fun handleRestingBetweenRounds(root: AccessibilityNodeInfo?) {
+        if (isHome(root)) {
+            enterState(AutomationState.OPENING_PROFILE, "休息结束，进入下一轮商单")
+        } else {
+            enterState(AutomationState.WAITING_HOME, "休息结束，等待得物首页")
+        }
+    }
+
+    private fun beginNextRound() {
+        runtime.roundCount++
+        runtime.listScrollCount = 0
+        runtime.sortPhase = SortPhase.RECENT
+        visitedTaskSignatures.clear()
+        val restMinutes = randomBetween(config.restMinMinutes, config.restMaxMinutes)
+        if (restMinutes > 0) {
+            notBeforeAt = SystemClock.elapsedRealtime() + restMinutes * 60_000L
+            enterState(AutomationState.RESTING_BETWEEN_ROUNDS, "休息 ${restMinutes} 分钟后开始第 ${runtime.roundCount + 1} 轮")
+        } else {
+            enterState(AutomationState.OPENING_PROFILE, "开始第 ${runtime.roundCount + 1} 轮商单")
+        }
+    }
+
+    private fun abandonCurrentTask(reason: String, status: String) {
+        runtime.enrollmentFailedCount++
+        updateCurrentResult(reason, status)
+        returnBackAttempts = 0
+        performBack("$reason，返回商单")
+        enterState(AutomationState.RETURNING_TO_TASK_LIST, reason)
+    }
+
+    private fun updateCurrentResult(reason: String, status: String, eligible: Boolean? = null) {
+        val signature = currentTaskSignature ?: return
+        runtime.recentResults = runtime.recentResults.map { result ->
+            if (result.signature == signature) {
+                result.copy(
+                    eligible = eligible ?: result.eligible,
+                    reason = reason,
+                    enrollmentStatus = status,
+                )
+            } else {
+                result
+            }
+        }
+    }
+
+    private fun performBack(label: String): Boolean {
+        if (!canAct()) return false
+        val performed = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+        if (performed) touchAction(label)
+        return performed
     }
 
     private fun nodeLabel(node: AccessibilityNodeInfo): String =
@@ -432,6 +823,8 @@ class AutomationController(
     private fun isProfile(root: AccessibilityNodeInfo?): Boolean =
         isDewuRoot(root) && (
             NodeUtils.hasAnyText(root, DewuSelectors.CREATION_CENTER) ||
+                (NodeUtils.hasAnyText(root, DewuSelectors.BRAND_CONTEXT) &&
+                    NodeUtils.hasAnyText(root, DewuSelectors.PROFILE_TAB)) ||
                 (NodeUtils.hasAnyText(root, DewuSelectors.PROFILE_MARKERS) &&
                     NodeUtils.hasAnyText(root, DewuSelectors.MORE))
             )
@@ -442,17 +835,79 @@ class AutomationController(
     private fun isBrandPage(root: AccessibilityNodeInfo?): Boolean =
         isDewuRoot(root) &&
             NodeUtils.hasAnyText(root, DewuSelectors.SORT_ENTRY) &&
-            NodeUtils.hasAnyText(root, DewuSelectors.BRAND_PAGE_MARKERS)
+            (
+                NodeUtils.hasAnyText(root, DewuSelectors.BRAND_PAGE_MARKERS) ||
+                    (NodeUtils.hasAnyText(root, DewuSelectors.REGISTER_BUTTONS) &&
+                        NodeUtils.hasAnyText(root, listOf("现金奖励")))
+                )
 
     private fun clickText(root: AccessibilityNodeInfo?, texts: Collection<String>, label: String): Boolean {
         if (texts.any { it in DewuSelectors.REGISTER_BUTTONS || it in DewuSelectors.APPLY_TO_JOIN }) {
             log("安全拦截：拒绝点击 $texts")
             return false
         }
-        val node = NodeUtils.findFirstByTexts(root, texts)
-        if (!NodeUtils.clickNode(node)) return false
-        touchAction(label)
-        return true
+        val node = findVisibleNodeByTexts(root, texts)
+        return activateNode(node, label)
+    }
+
+    private fun findVisibleNodeByTexts(
+        root: AccessibilityNodeInfo?,
+        texts: Collection<String>,
+    ): AccessibilityNodeInfo? {
+        val expected = texts.map(String::trim).filter(String::isNotEmpty)
+        return NodeUtils.findAllByTexts(root, expected).firstOrNull { node ->
+            val label = nodeLabel(node)
+            val bounds = NodeUtils.bounds(node)
+            expected.any { it == label } &&
+                bounds != null && bounds.width() > 0 && bounds.height() > 0
+        } ?: NodeUtils.findFirstByTexts(root, expected)
+    }
+
+    private fun findBottommostVisibleNodeByText(
+        root: AccessibilityNodeInfo?,
+        text: String,
+    ): AccessibilityNodeInfo? = NodeUtils.findAllByTexts(root, listOf(text))
+        .filter { nodeLabel(it) == text && isVisible(it) }
+        .maxByOrNull { NodeUtils.bounds(it)?.centerY() ?: Int.MIN_VALUE }
+
+    private fun isVisible(node: AccessibilityNodeInfo): Boolean {
+        val bounds = NodeUtils.bounds(node) ?: return false
+        return bounds.width() > 0 && bounds.height() > 0 && node.isVisibleToUser
+    }
+
+    private fun activateNode(node: AccessibilityNodeInfo?, label: String): Boolean {
+        val candidate = node ?: return false
+        val text = nodeLabel(candidate)
+        if (text in DewuSelectors.REGISTER_BUTTONS || text in DewuSelectors.APPLY_TO_JOIN) {
+            log("安全拦截：拒绝激活 $text")
+            return false
+        }
+        if (NodeUtils.clickNode(candidate)) {
+            touchAction(label)
+            return true
+        }
+        val bounds = NodeUtils.bounds(candidate) ?: return false
+        if (bounds.width() <= 0 || bounds.height() <= 0) return false
+        return performTap(bounds.centerX().toFloat(), bounds.centerY().toFloat(), label)
+    }
+
+    private fun activateEnrollmentNode(
+        node: AccessibilityNodeInfo?,
+        expectedText: String,
+        allowedStates: Set<AutomationState>,
+        label: String,
+    ): Boolean {
+        val candidate = node ?: return false
+        if (runtime.state !in allowedStates || nodeLabel(candidate) != expectedText || !isVisible(candidate)) {
+            log("报名安全拦截：state=${runtime.state}, expected=$expectedText, actual=${nodeLabel(candidate)}")
+            return false
+        }
+        if (NodeUtils.clickNode(candidate)) {
+            touchAction(label)
+            return true
+        }
+        val bounds = NodeUtils.bounds(candidate) ?: return false
+        return performTap(bounds.centerX().toFloat(), bounds.centerY().toFloat(), label)
     }
 
     private fun clickTaskPreviewMore(root: AccessibilityNodeInfo?): Boolean {
@@ -502,6 +957,14 @@ class AutomationController(
         val startX = screen.widthPx * if (left) 0.80f else 0.20f
         val endX = screen.widthPx * if (left) 0.20f else 0.80f
         return performSwipe(startX, y, endX, y, 420L, label)
+    }
+
+    private fun performContentHorizontalSwipe(left: Boolean, label: String): Boolean {
+        val screen = ScreenInfo.from(service)
+        val y = screen.heightPx * 0.55f
+        val startX = screen.widthPx * if (left) 0.82f else 0.18f
+        val endX = screen.widthPx * if (left) 0.18f else 0.82f
+        return performSwipe(startX, y, endX, y, 480L, label)
     }
 
     private fun performSwipe(
