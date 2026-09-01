@@ -2,6 +2,7 @@ import com.konnisan.dewuauto.automation.TaskCardParser
 import com.konnisan.dewuauto.automation.TaskEligibilityEvaluator
 import com.konnisan.dewuauto.automation.TaskDetailParser
 import com.konnisan.dewuauto.automation.EnrollmentFormHandler
+import com.konnisan.dewuauto.automation.SingleEnrollmentGate
 import com.konnisan.dewuauto.config.AutomationConfig
 
 fun main() {
@@ -80,11 +81,26 @@ fun main() {
     check(!EnrollmentFormHandler.hasSelectedAddress("确认报名信息 | 收货地址 | 请选择收货地址"))
     check(EnrollmentFormHandler.isIrreversibleNotice("报名须知 | 任务报名后无法取消 | 取消 | 确认"))
     check(EnrollmentFormHandler.isEnrollmentSuccess("待确认 | 已报名，待品牌方确认"))
+    check(EnrollmentFormHandler.isConfirmedSpecBounds(1080, 2259, 345, 513, 1023, 582))
+    check(!EnrollmentFormHandler.isConfirmedSpecBounds(1080, 2259, 57, 705, 168, 771))
+    check(!EnrollmentFormHandler.isConfirmedSpecBounds(1080, 2259, 345, 2184, 1023, 2226))
+
+    val gate = SingleEnrollmentGate()
+    gate.reset("run-1")
+    check(!gate.grant("wrong-run", "task-a", nowMs = 1_000L))
+    check(gate.grant("run-1", "task-a", nowMs = 1_000L, ttlMs = 60_000L))
+    check(!gate.consume("run-1", "task-b", nowMs = 2_000L))
+    check(gate.grant("run-1", "task-a", nowMs = 3_000L, ttlMs = 10L))
+    check(!gate.consume("run-1", "task-a", nowMs = 3_011L))
+    check(gate.grant("run-1", "task-a", nowMs = 4_000L))
+    check(gate.consume("run-1", "task-a", nowMs = 4_001L))
+    check(gate.finalConfirmationUsed)
+    check(!gate.grant("run-1", "task-a", nowMs = 5_000L))
 
     check(
         TaskEligibilityEvaluator.splitTerms("内定##复投##直接报名") ==
             listOf("内定", "复投", "直接报名"),
     )
 
-    println("TASK_FILTER_OK parser=3 webViewSplit=1 listFilters=4 detailFilters=2 formRules=6 splitTerms=1")
+    println("TASK_FILTER_OK parser=3 webViewSplit=1 listFilters=4 detailFilters=2 formRules=6 gate=8 specGeometry=3 splitTerms=1")
 }

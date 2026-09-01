@@ -24,4 +24,19 @@ object EnrollmentFormHandler {
 
     fun isEnrollmentSuccess(rawText: String): Boolean =
         DewuSelectors.ENROLLMENT_SUCCESS_MARKERS.any { rawText.contains(it, ignoreCase = true) }
+
+    fun isConfirmedSpecBounds(
+        screenWidth: Int,
+        screenHeight: Int,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+    ): Boolean {
+        if (screenWidth <= 0 || screenHeight <= 0 || right <= left || bottom <= top) return false
+        val centerY = top + (bottom - top) / 2
+        return left >= (screenWidth * 0.25f).toInt() &&
+            right >= (screenWidth * 0.85f).toInt() &&
+            centerY in (screenHeight * 0.12f).toInt()..(screenHeight * 0.42f).toInt()
+    }
 }

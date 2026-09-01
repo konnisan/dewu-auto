@@ -5,6 +5,7 @@ data class AutomationConfig(
     val productCategory: String = "服装",
     val sortMode: String = "最近发布",
     val targetEnrollmentCount: Int = 1,
+    val singleEnrollmentTestMode: Boolean = true,
     val maxListScrolls: Int = 5,
     val homeBrowseCount: Int = 1,
     val restMinMinutes: Int = 0,
@@ -35,7 +36,7 @@ data class AutomationConfig(
         val lowPrice = minOf(minPrice, maxPrice)
         val highPrice = maxOf(minPrice, maxPrice)
         return copy(
-            targetEnrollmentCount = targetEnrollmentCount.coerceIn(1, 20),
+            targetEnrollmentCount = if (singleEnrollmentTestMode) 1 else targetEnrollmentCount.coerceIn(1, 20),
             maxListScrolls = maxListScrolls.coerceIn(1, 50),
             homeBrowseCount = homeBrowseCount.coerceIn(0, 20),
             restMinMinutes = minRest.coerceAtMost(120),

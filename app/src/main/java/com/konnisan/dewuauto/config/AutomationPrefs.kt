@@ -12,6 +12,7 @@ class AutomationPrefs(context: Context) {
             .putString("productCategory", c.productCategory)
             .putString("sortMode", c.sortMode)
             .putInt("targetEnrollmentCount", c.targetEnrollmentCount)
+            .putBoolean("singleEnrollmentTestMode", c.singleEnrollmentTestMode)
             .putInt("maxListScrolls", c.maxListScrolls)
             .putInt("homeBrowseCount", c.homeBrowseCount)
             .putInt("restMinMinutes", c.restMinMinutes)
@@ -36,6 +37,7 @@ class AutomationPrefs(context: Context) {
             ?.takeUnless { it == "默认排序" }
             ?: "最近发布",
         targetEnrollmentCount = prefs.getInt("targetEnrollmentCount", 1),
+        singleEnrollmentTestMode = prefs.getBoolean("singleEnrollmentTestMode", true),
         maxListScrolls = prefs.getInt("maxListScrolls", 5),
         homeBrowseCount = prefs.getInt("homeBrowseCount", 1),
         restMinMinutes = prefs.getInt("restMinMinutes", 0),

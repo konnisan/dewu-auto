@@ -1,5 +1,6 @@
 *.iml
 .gradle/
+.kotlin/
 /local.properties
 /.idea/
 .DS_Store
@@ -8,5 +9,7 @@
 .externalNativeBuild/
 .cxx/
 app/build/
+hs_err_pid*.log
+replay_pid*.log
 潮流生活 触手可得(20).apk.1.1.1*.apk*
 *.apk*

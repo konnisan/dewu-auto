@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.konnisan.dewuauto.accessibility.AccessibilityStatus
 import com.konnisan.dewuauto.accessibility.DewuAccessibilityService
 import com.konnisan.dewuauto.automation.AutomationRuntime
+import com.konnisan.dewuauto.automation.AutomationState
 import com.konnisan.dewuauto.automation.DewuLauncher
 import com.konnisan.dewuauto.automation.DewuSelectors
 import com.konnisan.dewuauto.automation.PreviewTaskResult
@@ -48,6 +49,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spCategory: Spinner
     private lateinit var spSortMode: Spinner
     private lateinit var cbIrreversibleAck: CheckBox
+    private lateinit var cbSingleTestMode: CheckBox
+    private lateinit var operatorGatePanel: LinearLayout
+    private lateinit var tvOperatorGateSummary: TextView
+    private lateinit var btnAllowFinalConfirmation: Button
 
     private val uiTicker = object : Runnable {
         override fun run() {
@@ -96,6 +101,10 @@ class MainActivity : AppCompatActivity() {
         spCategory = findViewById(R.id.spCategory)
         spSortMode = findViewById(R.id.spSortMode)
         cbIrreversibleAck = findViewById(R.id.cbIrreversibleAck)
+        cbSingleTestMode = findViewById(R.id.cbSingleTestMode)
+        operatorGatePanel = findViewById(R.id.operatorGatePanel)
+        tvOperatorGateSummary = findViewById(R.id.tvOperatorGateSummary)
+        btnAllowFinalConfirmation = findViewById(R.id.btnAllowFinalConfirmation)
     }
 
     private fun setupActions() {
@@ -117,6 +126,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             DewuAccessibilityService.instance?.stopAutomation()
             toast("已停止自动报名任务")
+        }
+        btnAllowFinalConfirmation.setOnClickListener {
+            val granted = DewuAccessibilityService.instance?.authorizeFinalConfirmation() == true
+            if (granted) {
+                toast("一次性令牌已签发，60 秒内返回得物确认")
+            } else {
+                toast("当前状态不能授权最终确认")
+            }
         }
     }
 
@@ -173,6 +190,7 @@ class MainActivity : AppCompatActivity() {
         productCategory = spCategory.selectedItem?.toString() ?: "服装",
         sortMode = spSortMode.selectedItem?.toString() ?: "最近发布",
         targetEnrollmentCount = intValue(R.id.etTargetEnrollments, 1),
+        singleEnrollmentTestMode = cbSingleTestMode.isChecked,
         maxListScrolls = intValue(R.id.etMaxScrolls, 5),
         homeBrowseCount = intValue(R.id.etHomeBrowseCount, 1),
         restMinMinutes = intValue(R.id.etRestMin, 5),
@@ -197,6 +215,7 @@ class MainActivity : AppCompatActivity() {
         selectSpinner(spCategory, config.productCategory)
         selectSpinner(spSortMode, config.sortMode)
         setText(R.id.etTargetEnrollments, config.targetEnrollmentCount)
+        cbSingleTestMode.isChecked = config.singleEnrollmentTestMode
         setText(R.id.etMaxScrolls, config.maxListScrolls)
         setText(R.id.etHomeBrowseCount, config.homeBrowseCount)
         setText(R.id.etRestMin, config.restMinMinutes)
@@ -238,10 +257,25 @@ class MainActivity : AppCompatActivity() {
         tvEligibleCount.text = "符合\n${runtime.eligibleCount}"
         tvExcludedCount.text = "已跳过\n${runtime.excludedCount + runtime.enrollmentFailedCount}"
         tvEnrollmentSuccessCount.text = "已报名\n${runtime.enrollmentSuccessCount}"
+        val waitingOperator = runtime.state == AutomationState.AWAITING_OPERATOR_CONFIRMATION
+        operatorGatePanel.visibility = if (waitingOperator) View.VISIBLE else View.GONE
+        btnAllowFinalConfirmation.isEnabled = waitingOperator && !runtime.finalConfirmationUsed
+        if (waitingOperator) {
+            tvOperatorGateSummary.text = buildString {
+                append("任务：").append(runtime.currentTaskTitle ?: "未识别")
+                append("\n详情：").append(runtime.detailCheckSummary)
+                append("\n报名信息：").append(runtime.formCheckSummary)
+                append("\n运行：").append(runtime.runId.take(8))
+            }
+        }
         tvAccountNotice.text = if (runtime.requiresCreatorEnrollment) {
             "当前页面仅显示“申请入驻”，任务已安全停止"
         } else {
-            "达人号商单模式 · 详情复筛通过后自动报名"
+            if (runtime.state == AutomationState.AWAITING_OPERATOR_CONFIRMATION) {
+                "前置验证完成 · 等待一次最终确认授权"
+            } else {
+                "达人号商单模式 · 详情复筛通过后自动报名"
+            }
         }
 
         bindResult(tvResultOne, runtime.recentResults.getOrNull(0))
@@ -273,7 +307,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateAdvancedSummary(config: AutomationConfig) {
         tvAdvancedSummary.text =
-            "目标 ${config.targetEnrollmentCount} 个 · 下滑 ${config.maxListScrolls} 次 · 作品 ${config.homeBrowseCount} 个"
+            if (config.singleEnrollmentTestMode) {
+                "单次实测 · 最终确认前暂停 · 下滑 ${config.maxListScrolls} 次"
+            } else {
+                "目标 ${config.targetEnrollmentCount} 个 · 下滑 ${config.maxListScrolls} 次 · 作品 ${config.homeBrowseCount} 个"
+            }
     }
 
     @Suppress("DEPRECATION")

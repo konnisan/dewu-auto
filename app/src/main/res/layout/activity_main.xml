@@ -24,7 +24,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="得物自动报名 V1"
+                android:text="得物自动报名 V1.1 实测版"
                 android:textColor="#15191C"
                 android:textSize="24sp"
                 android:textStyle="bold" />
@@ -443,6 +443,18 @@
         </LinearLayout>
 
         <CheckBox
+            android:id="@+id/cbSingleTestMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#E8F7F7"
+            android:buttonTint="#079CA3"
+            android:checked="true"
+            android:padding="16dp"
+            android:text="单次实测模式：目标固定为 1，到最终确认弹窗暂停"
+            android:textColor="#067F85"
+            android:textSize="13sp" />
+
+        <CheckBox
             android:id="@+id/cbIrreversibleAck"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -452,6 +464,45 @@
             android:text="我已确认：任务报名后无法取消，筛选通过后允许自动提交"
             android:textColor="#8D5C25"
             android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/operatorGatePanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#FFF7EA"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="最终确认闸门"
+                android:textColor="#B96200"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvOperatorGateSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="等待前置验证"
+                android:textColor="#8D5C25"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAllowFinalConfirmation"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="12dp"
+                android:backgroundTint="#C66A00"
+                android:text="允许本次最终确认"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                app:cornerRadius="8dp" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
