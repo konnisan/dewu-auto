@@ -28,13 +28,20 @@ object TaskEligibilityEvaluator {
 
         val reward = task.rewardAmount
         if (reward == null && (config.minPrice > 0.0 || config.maxPrice < 9_999_999.0)) {
-            return TaskEligibility(false, "未识别到奖励金额")
+            return TaskEligibility(false, "未识别到现金奖励，设置范围 ${formatRange(config)}，跳过")
         }
         if (reward != null && reward !in config.minPrice..config.maxPrice) {
-            return TaskEligibility(false, "奖励不在范围内")
+            return TaskEligibility(
+                false,
+                "现金奖励 ${formatReward(reward)}，不在 ${formatRange(config)}，跳过",
+            )
         }
 
-        return TaskEligibility(true, "符合筛选条件")
+        return TaskEligibility(
+            true,
+            reward?.let { "现金奖励 ${formatReward(it)}，位于 ${formatRange(config)}，通过" }
+                ?: "未设置现金奖励范围，通过",
+        )
     }
 
     fun evaluateDetail(detail: TaskDetail, config: AutomationConfig): TaskEligibility {
@@ -65,4 +72,10 @@ object TaskEligibilityEvaluator {
         .map(String::trim)
         .filter(String::isNotEmpty)
         .distinct()
+
+    internal fun formatReward(value: Double): String =
+        "¥" + java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
+
+    private fun formatRange(config: AutomationConfig): String =
+        "${formatReward(config.minPrice)}-${formatReward(config.maxPrice)}"
 }

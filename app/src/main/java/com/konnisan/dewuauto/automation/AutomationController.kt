@@ -24,6 +24,8 @@ class AutomationController(
         private const val HOME_DIAGNOSTIC_INTERVAL_MS = 5_000L
         private const val PAGE_TIMEOUT_MS = 20_000L
         private const val MAX_RECENT_RESULTS = 4
+        private const val MAX_CATEGORY_PANEL_SWIPES = 3
+        private const val MAX_CATEGORY_ATTEMPTS = 2
         private val TASK_CAPACITY_PATTERN = Regex("(?:(?:已)?报名[：:]?\\s*)?\\d+\\s*/\\s*\\d+\\s*人")
     }
 
@@ -43,6 +45,7 @@ class AutomationController(
     private var running = false
     private var sortMenuOpened = false
     private var categoryStep = 0
+    private var categoryPanelSwipeCount = 0
     private var brandEntryStep = 0
     private var wrongMoreRecoveryCount = 0
     private var brandShellRecoveryCount = 0
@@ -103,6 +106,7 @@ class AutomationController(
         visitedTaskSignatures.clear()
         sortMenuOpened = false
         categoryStep = 0
+        categoryPanelSwipeCount = 0
         brandEntryStep = 0
         wrongMoreRecoveryCount = 0
         brandShellRecoveryCount = 0
@@ -120,6 +124,11 @@ class AutomationController(
         specSelectionAttempts = 0
         formSpecTarget = ""
         running = true
+        log(
+            "CONFIG run=${runtime.runId.take(8)} category=${config.productCategory} " +
+                "cashReward=${TaskEligibilityEvaluator.formatReward(config.minPrice)}-" +
+                TaskEligibilityEvaluator.formatReward(config.maxPrice),
+        )
         enterState(AutomationState.VERIFYING_LICENSE, "验证卡密")
 
         licenseManager.verify(config.cardKey) { result ->
@@ -460,6 +469,7 @@ class AutomationController(
                 val filterNode = findVisibleNodeByTexts(root, listOf(DewuSelectors.FILTER_ENTRY))
                 if (tapWebNode(filterNode, "打开筛选面板")) {
                     categoryStep = 1
+                    categoryPanelSwipeCount = 0
                     notBeforeAt = SystemClock.elapsedRealtime() + 900L
                     stateEnteredAt = SystemClock.elapsedRealtime()
                     return
@@ -472,12 +482,23 @@ class AutomationController(
                     if (elapsedInState() > 3_000L) retryCategoryOrFail("筛选面板未实际打开")
                     return
                 }
-                val categoryNode = findVisibleNodeByTexts(root, listOf(config.productCategory))
+                val categoryNode = findCategoryPanelOption(root, config.productCategory)
                 if (tapWebNode(categoryNode, "选择类目：${config.productCategory}")) {
                     categoryStep = 2
                     stateEnteredAt = SystemClock.elapsedRealtime()
-                } else if (elapsedInState() > 3_000L) {
-                    retryCategoryOrFail("筛选面板中未找到类目：${config.productCategory}")
+                } else if (elapsedInState() > 1_200L) {
+                    if (categoryPanelSwipeCount < MAX_CATEGORY_PANEL_SWIPES &&
+                        performCategoryPanelSwipe(root, "查找类目：${config.productCategory}")
+                    ) {
+                        categoryPanelSwipeCount++
+                        stateEnteredAt = SystemClock.elapsedRealtime()
+                        notBeforeAt = SystemClock.elapsedRealtime() + 700L
+                    } else {
+                        retryCategoryOrFail(
+                            "筛选面板中未找到精确类目：${config.productCategory}，" +
+                                "已滑动 $categoryPanelSwipeCount 次",
+                        )
+                    }
                 }
             }
 
@@ -497,25 +518,36 @@ class AutomationController(
     }
 
     private fun handleVerifyCategorySelection(root: AccessibilityNodeInfo?) {
-        if (root != null && isBrandPage(root) && !isFilterPanelOpen(root) && hasVisibleTaskList(root)) {
+        if (root != null && isBrandPage(root) && !isFilterPanelOpen(root) &&
+            isSelectedCategoryInFilterBar(root, config.productCategory) && hasVisibleTaskList(root)
+        ) {
             postconditionAttempts = 0
             syncPostconditionAttempts()
             runtime.listScrollCount = 0
             enterState(AutomationState.SCANNING_TASKS, "类目 ${config.productCategory} 已生效，扫描真实任务")
             return
         }
-        if (elapsedInState() > 10_000L) retryCategoryOrFail("未检测到类目筛选后的任务列表")
+        if (elapsedInState() > 10_000L) {
+            val actualCategory = currentCategoryInFilterBar(root) ?: "未识别"
+            retryCategoryOrFail(
+                "类目验真失败：配置 ${config.productCategory}，顶部实际 $actualCategory",
+            )
+        }
     }
 
     private fun retryCategoryOrFail(reason: String) {
         postconditionAttempts++
         syncPostconditionAttempts()
         categoryStep = 0
-        if (postconditionAttempts >= 3) {
-            fail("$reason，连续 3 次无页面变化")
+        categoryPanelSwipeCount = 0
+        if (postconditionAttempts >= MAX_CATEGORY_ATTEMPTS) {
+            fail("$reason，连续 $MAX_CATEGORY_ATTEMPTS 次未生效")
             return
         }
-        enterState(AutomationState.APPLYING_CATEGORY, "$reason，重试 $postconditionAttempts/3")
+        enterState(
+            AutomationState.APPLYING_CATEGORY,
+            "$reason，重试 $postconditionAttempts/$MAX_CATEGORY_ATTEMPTS",
+        )
     }
 
     private fun handleScanTasks(root: AccessibilityNodeInfo?) {
@@ -559,21 +591,18 @@ class AutomationController(
     private fun scanVisibleTasks(root: AccessibilityNodeInfo): Pair<List<PreviewTaskResult>, EnrollmentCandidate?> {
         val registerNodes = NodeUtils.findAllByTexts(root, DewuSelectors.REGISTER_BUTTONS)
             .filter { nodeLabel(it) == "报名" && isSafeTaskActionNode(it) }
-        val capacityNodes = NodeUtils.findAll(root) { node ->
-            val label = nodeLabel(node)
-            TASK_CAPACITY_PATTERN.containsMatchIn(label)
-        }
-        val cardRoots = buildList {
-            registerNodes.mapNotNullTo(this) {
-                findTaskCardRoot(it) ?: NodeUtils.nearestClickableAncestor(it, maxLevels = 6)
-            }
-            capacityNodes.mapNotNullTo(this) { findTaskCardRoot(it) }
-        }
         val results = mutableListOf<PreviewTaskResult>()
         var candidate: EnrollmentCandidate? = null
 
-        for (cardRoot in cardRoots) {
+        for (registerNode in registerNodes) {
+            val cardRoot = findTaskCardRoot(registerNode)
+            if (cardRoot == null) {
+                runtime.parseFailedCount++
+                log("TASK_SCAN rejected=card-boundary-not-unique button=${NodeUtils.bounds(registerNode)}")
+                continue
+            }
             val rawText = NodeUtils.collectText(cardRoot, maxNodes = 100)
+            val cardBounds = NodeUtils.bounds(cardRoot)?.toShortString().orEmpty()
             val rawSignature = rawText.replace(Regex("\\s+"), " ").take(1_200).hashCode().toString()
             if (rawText.isBlank() || !visitedTaskSignatures.add(rawSignature)) continue
 
@@ -587,7 +616,7 @@ class AutomationController(
             val result = PreviewTaskResult(
                 signature = task.signature,
                 title = task.title,
-                rewardText = task.rewardAmount?.let(::formatReward) ?: "奖励未识别",
+                rewardText = task.rewardAmount?.let { "现金奖励 ${formatReward(it)}" } ?: "现金奖励未识别",
                 capacityText = if (task.registeredCount != null && task.capacity != null) {
                     "${task.registeredCount}/${task.capacity}人"
                 } else {
@@ -600,13 +629,15 @@ class AutomationController(
             results += result
             runtime.scannedCount++
             if (result.eligible) runtime.eligibleCount++ else runtime.excludedCount++
+            log(
+                "TASK_SCAN title=${task.title.take(80)} reward=${result.rewardText} " +
+                    "range=${TaskEligibilityEvaluator.formatReward(config.minPrice)}-" +
+                    "${TaskEligibilityEvaluator.formatReward(config.maxPrice)} " +
+                    "eligible=${eligibility.eligible} reason=${eligibility.reason} bounds=$cardBounds",
+            )
 
             if (eligibility.eligible && candidate == null) {
-                val registerNode = registerNodes.firstOrNull { node ->
-                    val nodeRoot = findTaskCardRoot(node)
-                    nodeRoot != null && NodeUtils.collectText(nodeRoot, 100) == rawText
-                }
-                if (registerNode != null) candidate = EnrollmentCandidate(task, result, registerNode)
+                candidate = EnrollmentCandidate(task, result, registerNode)
             }
         }
 
@@ -625,8 +656,12 @@ class AutomationController(
             val cardText = NodeUtils.collectText(candidate, maxNodes = 100)
             val compactText = cardText.replace(Regex("\\s*\\|\\s*"), "")
             val hasCapacity = TASK_CAPACITY_PATTERN.containsMatchIn(compactText)
-            val hasReward = cardText.contains("现金奖励") || cardText.contains("¥") || cardText.contains("￥")
-            if (hasCapacity && hasReward) return candidate
+            val hasCashReward = cardText.contains("现金奖励") &&
+                (cardText.contains("¥") || cardText.contains("￥"))
+            val exactRegisterCount = NodeUtils.findAllByTexts(candidate, listOf("报名"))
+                .count { nodeLabel(it) == "报名" && isSafeTaskActionNode(it) }
+            if (hasCapacity && hasCashReward && exactRegisterCount == 1) return candidate
+            if (exactRegisterCount > 1) return null
             current = candidate.parent
         }
         return null
@@ -1073,6 +1108,60 @@ class AutomationController(
         }
     }
 
+    private fun isSelectedCategoryInFilterBar(
+        root: AccessibilityNodeInfo?,
+        target: String,
+    ): Boolean {
+        val screen = ScreenInfo.from(service)
+        return NodeUtils.findAllByTexts(root, listOf(target)).any { node ->
+            val bounds = NodeUtils.bounds(node)
+            bounds != null && isVisible(node) && CategorySelectionRules.isHeaderValue(
+                label = nodeLabel(node),
+                target = target,
+                centerY = bounds.centerY(),
+                screenHeight = screen.heightPx,
+            )
+        }
+    }
+
+    private fun currentCategoryInFilterBar(root: AccessibilityNodeInfo?): String? {
+        val screen = ScreenInfo.from(service)
+        return DewuSelectors.PRODUCT_CATEGORIES.firstOrNull { category ->
+            NodeUtils.findAllByTexts(root, listOf(category)).any { node ->
+                val bounds = NodeUtils.bounds(node)
+                bounds != null && isVisible(node) && CategorySelectionRules.isHeaderValue(
+                    label = nodeLabel(node),
+                    target = category,
+                    centerY = bounds.centerY(),
+                    screenHeight = screen.heightPx,
+                )
+            }
+        }
+    }
+
+    private fun findCategoryPanelOption(
+        root: AccessibilityNodeInfo?,
+        target: String,
+    ): AccessibilityNodeInfo? {
+        val screen = ScreenInfo.from(service)
+        val confirmTop = findBottommostVisibleNodeByText(root, DewuSelectors.FILTER_CONFIRM.first())
+            ?.let(NodeUtils::bounds)
+            ?.top
+            ?: return null
+        return NodeUtils.findAllByTexts(root, listOf(target))
+            .filter { node ->
+                val bounds = NodeUtils.bounds(node)
+                bounds != null && isVisible(node) && CategorySelectionRules.isPanelOption(
+                    label = nodeLabel(node),
+                    target = target,
+                    centerY = bounds.centerY(),
+                    screenHeight = screen.heightPx,
+                    confirmTop = confirmTop,
+                )
+            }
+            .minByOrNull { NodeUtils.bounds(it)?.centerY() ?: Int.MAX_VALUE }
+    }
+
     private fun isFilterPanelOpen(root: AccessibilityNodeInfo?): Boolean =
         NodeUtils.hasAnyText(root, listOf("任务类型")) &&
             NodeUtils.hasAnyText(root, listOf("产品类目")) &&
@@ -1128,7 +1217,7 @@ class AutomationController(
         if (!isVisible(node)) return false
         val bounds = NodeUtils.bounds(node) ?: return false
         val screen = ScreenInfo.from(service)
-        return bounds.centerY() in
+        return bounds.centerX() >= (screen.widthPx * 0.62f).toInt() && bounds.centerY() in
             (screen.heightPx * 0.16f).toInt()..(screen.heightPx * 0.90f).toInt()
     }
 
@@ -1318,6 +1407,28 @@ class AutomationController(
         val startX = screen.widthPx * if (left) 0.80f else 0.20f
         val endX = screen.widthPx * if (left) 0.20f else 0.80f
         return performSwipe(startX, y, endX, y, 420L, label)
+    }
+
+    private fun performCategoryPanelSwipe(root: AccessibilityNodeInfo?, label: String): Boolean {
+        val screen = ScreenInfo.from(service)
+        val categoryLabel = NodeUtils.findAllByTexts(root, listOf(DewuSelectors.PRODUCT_CATEGORY))
+            .filter { nodeLabel(it) == DewuSelectors.PRODUCT_CATEGORY && isVisible(it) }
+            .maxByOrNull { NodeUtils.bounds(it)?.centerY() ?: Int.MIN_VALUE }
+        val labelBounds = NodeUtils.bounds(categoryLabel) ?: return false
+        val confirmTop = findBottommostVisibleNodeByText(root, DewuSelectors.FILTER_CONFIRM.first())
+            ?.let(NodeUtils::bounds)
+            ?.top
+            ?: return false
+        val y = (labelBounds.bottom + screen.heightPx * 0.055f)
+            .coerceAtMost(confirmTop - screen.heightPx * 0.03f)
+        return performSwipe(
+            startX = screen.widthPx * 0.82f,
+            startY = y,
+            endX = screen.widthPx * 0.18f,
+            endY = y,
+            durationMs = 420L,
+            label = "$label，横滑 ${categoryPanelSwipeCount + 1}/$MAX_CATEGORY_PANEL_SWIPES",
+        )
     }
 
     private fun performContentHorizontalSwipe(left: Boolean, label: String): Boolean {

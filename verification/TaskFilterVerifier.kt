@@ -3,9 +3,28 @@ import com.konnisan.dewuauto.automation.TaskEligibilityEvaluator
 import com.konnisan.dewuauto.automation.TaskDetailParser
 import com.konnisan.dewuauto.automation.EnrollmentFormHandler
 import com.konnisan.dewuauto.automation.SingleEnrollmentGate
+import com.konnisan.dewuauto.automation.CategorySelectionRules
+import com.konnisan.dewuauto.automation.DewuSelectors
 import com.konnisan.dewuauto.config.AutomationConfig
 
 fun main() {
+    DewuSelectors.PRODUCT_CATEGORIES.forEach { category ->
+        check(CategorySelectionRules.isExactCategory(category, category))
+        check(CategorySelectionRules.isHeaderValue(category, category, centerY = 150, screenHeight = 1_000))
+        check(
+            CategorySelectionRules.isPanelOption(
+                category,
+                category,
+                centerY = 400,
+                screenHeight = 1_000,
+                confirmTop = 900,
+            ),
+        )
+    }
+    check(!CategorySelectionRules.isExactCategory("鞋类", "鞋"))
+    check(!CategorySelectionRules.isPanelOption("鞋", "鞋", 150, 1_000, 900))
+    check(!CategorySelectionRules.isHeaderValue("鞋", "鞋", 400, 1_000))
+
     val visibleTask = requireNotNull(
         TaskCardParser.parse(
             "YORKZOOM垂感双褶设计休闲裤151, 已报名：16/20人, 秒杀剩15小时, 现金奖励, ¥100, 报名",
@@ -33,6 +52,54 @@ fun main() {
     check(splitWebViewCard.registeredCount == 38)
     check(splitWebViewCard.capacity == 40)
     check(splitWebViewCard.deadlineText == "6天后截止")
+
+    val priceAndRewardCard = requireNotNull(
+        TaskCardParser.parse(
+            "鞋类试穿 | 商品售价 ¥20 | 报名：20/100人 | 6天后截止 | 现金奖励 | ¥30 | 报名",
+        ),
+    )
+    check(priceAndRewardCard.rewardAmount == 30.0)
+    check(priceAndRewardCard.registeredCount == 20)
+
+    val ambiguousRewardCard = requireNotNull(
+        TaskCardParser.parse(
+            "异常合并卡片 | 报名：1/100人 | 现金奖励 ¥20 | 现金奖励 ¥30 | 报名",
+        ),
+    )
+    check(ambiguousRewardCard.rewardAmount == null)
+
+    val rewardRange = AutomationConfig(minPrice = 30.0, maxPrice = 99_999.0)
+    fun evaluateReward(value: String) = TaskEligibilityEvaluator.evaluate(
+        requireNotNull(
+            TaskCardParser.parse(
+                "奖励边界 $value | 报名：1/100人 | 6天后截止 | 现金奖励 ¥$value | 报名",
+            ),
+        ),
+        rewardRange,
+    )
+    check(!evaluateReward("20").eligible)
+    check(!evaluateReward("29.99").eligible)
+    check(evaluateReward("30").eligible)
+    check(evaluateReward("30.00").eligible)
+    check(evaluateReward("99999").eligible)
+    check(!evaluateReward("99999.01").eligible)
+    check(evaluateReward("20").reason == "现金奖励 ¥20，不在 ¥30-¥99999，跳过")
+    check(evaluateReward("30").reason == "现金奖励 ¥30，位于 ¥30-¥99999，通过")
+    val missingRewardResult = TaskEligibilityEvaluator.evaluate(
+        requireNotNull(TaskCardParser.parse("无金额任务 | 报名：1/100人 | 6天后截止 | 报名")),
+        rewardRange,
+    )
+    check(!missingRewardResult.eligible)
+    check(missingRewardResult.reason == "未识别到现金奖励，设置范围 ¥30-¥99999，跳过")
+
+    val adjacentLow = requireNotNull(
+        TaskCardParser.parse("低奖励任务 | 报名：1/100人 | 现金奖励 ¥20 | 报名"),
+    )
+    val adjacentBoundary = requireNotNull(
+        TaskCardParser.parse("边界奖励任务 | 报名：1/100人 | 现金奖励 ¥30 | 报名"),
+    )
+    check(!TaskEligibilityEvaluator.evaluate(adjacentLow, rewardRange).eligible)
+    check(TaskEligibilityEvaluator.evaluate(adjacentBoundary, rewardRange).eligible)
 
     val fullTask = requireNotNull(
         TaskCardParser.parse("球鞋开箱体验任务 | 已报名：80/80人 | 6天后截止 | 现金奖励 | ¥100 | 报名"),
@@ -131,5 +198,8 @@ fun main() {
             listOf("内定", "复投", "直接报名"),
     )
 
-    println("TASK_FILTER_OK parser=3 webViewSplit=1 listFilters=4 threeFieldFilters=7 formRules=6 gate=8 specGeometry=3 splitTerms=1")
+    println(
+        "TASK_FILTER_OK categories=10 categoryGeometry=33 parser=5 rewardBoundaries=9 " +
+            "webViewSplit=1 listFilters=4 threeFieldFilters=7 formRules=6 gate=8 specGeometry=3 splitTerms=1",
+    )
 }

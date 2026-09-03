@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">得物自动报名 V1.1 实测版</string>
+    <string name="app_name">得物自动报名 V1.2 实测版</string>
     <string name="accessibility_service_label">得物自动报名服务</string>
     <string name="accessibility_service_description">用户明确启动并确认不可取消风险后，进入达人号商单，执行列表与详情双重筛选、填写规格并自动报名；不会点击申请入驻，遇到安全验证自动暂停。</string>
 </resources>

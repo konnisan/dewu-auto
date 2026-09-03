@@ -1,7 +1,7 @@
 package com.konnisan.dewuauto.automation
 
 object TaskCardParser {
-    private val rewardPattern = Regex("[¥￥]\\s*(\\d+(?:\\.\\d+)?)")
+    private val cashRewardPattern = Regex("现金奖励[\\s|,，：:]*[¥￥]\\s*(\\d+(?:\\.\\d+)?)")
     private val capacityPattern = Regex("(?:(?:已)?报名[：:]?\\s*)?(\\d+)\\s*/\\s*(\\d+)\\s*人")
     private val deadlinePattern = Regex(
         "秒杀剩\\s*\\d+\\s*(?:秒|分钟|小时|天)|" +
@@ -39,7 +39,11 @@ object TaskCardParser {
             }
             ?: return null
 
-        val reward = rewardPattern.find(compact)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+        val cashRewards = cashRewardPattern.findAll(normalized)
+            .mapNotNull { it.groupValues.getOrNull(1)?.toDoubleOrNull() }
+            .distinct()
+            .toList()
+        val reward = cashRewards.singleOrNull()
         val capacityMatch = capacityPattern.find(compact)
         val registered = capacityMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
         val capacity = capacityMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
