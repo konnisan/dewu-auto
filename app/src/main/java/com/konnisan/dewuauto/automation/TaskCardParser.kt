@@ -11,10 +11,11 @@ object TaskCardParser {
 
     private val nonTitlePatterns = listOf(
         Regex("^投稿$"),
-        Regex("^仅图文$|^仅视频$"),
+        Regex("^仅图文$|^仅视频$|^图文[/／]视频$|^图文或(?:者)?视频$"),
         Regex("^Lv\\.?\\d+.*任务$", RegexOption.IGNORE_CASE),
-        Regex("^报名$"),
+        Regex("^${Regex.escape(DewuSelectors.LIST_REGISTER)}$"),
         Regex("^立即报名$"),
+        Regex("^${Regex.escape(DewuSelectors.SUBSCRIBE_REMINDER)}$"),
         Regex("^已报名"),
         Regex("^报名[：:]?\\s*\\d+\\s*/"),
         Regex("^\\d+\\s*/\\s*\\d+人$"),

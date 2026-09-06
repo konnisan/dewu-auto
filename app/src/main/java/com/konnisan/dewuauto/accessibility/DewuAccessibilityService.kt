@@ -48,9 +48,6 @@ class DewuAccessibilityService : AccessibilityService() {
         if (::controller.isInitialized) controller.stop()
     }
 
-    fun authorizeFinalConfirmation(): Boolean =
-        if (::controller.isInitialized) controller.authorizeFinalConfirmation() else false
-
     fun snapshot(): AutomationRuntime? =
         if (::controller.isInitialized) controller.snapshot() else null
 }

@@ -45,15 +45,48 @@ object TaskEligibilityEvaluator {
     }
 
     fun evaluateDetail(detail: TaskDetail, config: AutomationConfig): TaskEligibility {
+        evaluateDetailOverview(detail, config).takeUnless(TaskEligibility::eligible)?.let { return it }
+        return evaluateShootingRequirements(detail, config)
+    }
+
+    fun evaluateDetailOverview(detail: TaskDetail, config: AutomationConfig): TaskEligibility {
+        when (detail.contentType) {
+            TaskContentType.VIDEO_ONLY -> return TaskEligibility(
+                false,
+                "内容类型为仅视频",
+                matchedField = "内容类型",
+                matchedWord = "仅视频",
+            )
+            TaskContentType.UNKNOWN -> return TaskEligibility(
+                false,
+                "内容类型未识别",
+                matchedField = "内容类型",
+            )
+            TaskContentType.IMAGE_ONLY,
+            TaskContentType.IMAGE_OR_VIDEO -> Unit
+        }
+
         findBlockedWord(
             fields = listOf(
                 BlockField("商品名字", detail.productName),
                 BlockField("合作方式", detail.cooperationMethod),
-                BlockField("达人要求", detail.creatorRequirements),
             ),
             words = config.excludedWords,
         )?.let { return it }
-        return TaskEligibility(true, "商品名字、合作方式、达人要求均未命中屏蔽词")
+
+        findBlockedWord(
+            fields = listOf(BlockField("达人要求", detail.creatorRequirements)),
+            words = requirementWords(config.excludedWords),
+        )?.let { return it }
+        return FaceRequirementPolicy.evaluate("达人要求", detail.creatorRequirements)
+    }
+
+    fun evaluateShootingRequirements(detail: TaskDetail, config: AutomationConfig): TaskEligibility {
+        findBlockedWord(
+            fields = listOf(BlockField("拍摄要求", detail.shootingRequirements)),
+            words = requirementWords(config.excludedWords),
+        )?.let { return it }
+        return FaceRequirementPolicy.evaluate("拍摄要求", detail.shootingRequirements)
     }
 
     private fun findBlockedWord(fields: List<BlockField>, words: List<String>): TaskEligibility? {
@@ -61,11 +94,19 @@ object TaskEligibilityEvaluator {
             words.firstOrNull { word ->
                 word.isNotBlank() && field.value.contains(word.trim(), ignoreCase = true)
             }?.let { word ->
-                return TaskEligibility(false, "${field.displayName}命中屏蔽词：${word.trim()}")
+                return TaskEligibility(
+                    eligible = false,
+                    reason = "${field.displayName}命中屏蔽词：${word.trim()}",
+                    matchedField = field.displayName,
+                    matchedWord = word.trim(),
+                )
             }
         }
         return null
     }
+
+    private fun requirementWords(words: List<String>): List<String> =
+        words.filterNot { it.trim().contains("露脸", ignoreCase = true) }
 
     internal fun splitTerms(value: String): List<String> = value
         .split(Regex("(?:##|[,，、;；\\s]+)"))

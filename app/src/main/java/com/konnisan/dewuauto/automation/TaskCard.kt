@@ -13,6 +13,8 @@ data class TaskCard(
 data class TaskEligibility(
     val eligible: Boolean,
     val reason: String,
+    val matchedField: String? = null,
+    val matchedWord: String? = null,
 )
 
 data class PreviewTaskResult(
@@ -24,4 +26,7 @@ data class PreviewTaskResult(
     val eligible: Boolean,
     val reason: String,
     val enrollmentStatus: String = "未报名",
+    val contentTypeText: String = "待检查",
+    val matchedField: String? = null,
+    val matchedWord: String? = null,
 )

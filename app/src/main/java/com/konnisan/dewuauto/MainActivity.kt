@@ -1,6 +1,7 @@
 package com.konnisan.dewuauto
 
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -9,14 +10,13 @@ import android.provider.Settings
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
 import com.konnisan.dewuauto.accessibility.AccessibilityStatus
 import com.konnisan.dewuauto.accessibility.DewuAccessibilityService
 import com.konnisan.dewuauto.automation.AutomationRuntime
@@ -41,18 +41,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvEligibleCount: TextView
     private lateinit var tvExcludedCount: TextView
     private lateinit var tvEnrollmentSuccessCount: TextView
-    private lateinit var tvResultOne: TextView
-    private lateinit var tvResultTwo: TextView
-    private lateinit var tvAdvancedSummary: TextView
-    private lateinit var advancedPanel: LinearLayout
-    private lateinit var advancedChevron: ImageView
+    private lateinit var tvResultEmpty: TextView
+    private lateinit var resultList: LinearLayout
     private lateinit var spCategory: Spinner
     private lateinit var spSortMode: Spinner
-    private lateinit var cbIrreversibleAck: CheckBox
-    private lateinit var cbSingleTestMode: CheckBox
-    private lateinit var operatorGatePanel: LinearLayout
-    private lateinit var tvOperatorGateSummary: TextView
-    private lateinit var btnAllowFinalConfirmation: Button
+    private lateinit var btnFinalConfirmationMode: MaterialButton
+    private var finalConfirmationArmed = false
+    private var lastClearedTerminalRunId = ""
+    private var lastRenderedResults: List<PreviewTaskResult> = emptyList()
 
     private val uiTicker = object : Runnable {
         override fun run() {
@@ -70,6 +66,8 @@ class MainActivity : AppCompatActivity() {
         setupSpinners()
         bindConfig(prefs.load())
         setupActions()
+        lastClearedTerminalRunId = DewuAccessibilityService.instance?.snapshot()?.runId.orEmpty()
+        renderFinalConfirmationButton(finalConfirmationArmed, locked = false)
     }
 
     override fun onResume() {
@@ -93,27 +91,14 @@ class MainActivity : AppCompatActivity() {
         tvEligibleCount = findViewById(R.id.tvEligibleCount)
         tvExcludedCount = findViewById(R.id.tvExcludedCount)
         tvEnrollmentSuccessCount = findViewById(R.id.tvEnrollmentSuccessCount)
-        tvResultOne = findViewById(R.id.tvResultOne)
-        tvResultTwo = findViewById(R.id.tvResultTwo)
-        tvAdvancedSummary = findViewById(R.id.tvAdvancedSummary)
-        advancedPanel = findViewById(R.id.advancedPanel)
-        advancedChevron = findViewById(R.id.ivAdvancedChevron)
+        tvResultEmpty = findViewById(R.id.tvResultEmpty)
+        resultList = findViewById(R.id.resultList)
         spCategory = findViewById(R.id.spCategory)
         spSortMode = findViewById(R.id.spSortMode)
-        cbIrreversibleAck = findViewById(R.id.cbIrreversibleAck)
-        cbSingleTestMode = findViewById(R.id.cbSingleTestMode)
-        operatorGatePanel = findViewById(R.id.operatorGatePanel)
-        tvOperatorGateSummary = findViewById(R.id.tvOperatorGateSummary)
-        btnAllowFinalConfirmation = findViewById(R.id.btnAllowFinalConfirmation)
+        btnFinalConfirmationMode = findViewById(R.id.btnFinalConfirmationMode)
     }
 
     private fun setupActions() {
-        findViewById<View>(R.id.advancedHeader).setOnClickListener {
-            val expanding = advancedPanel.visibility != View.VISIBLE
-            advancedPanel.visibility = if (expanding) View.VISIBLE else View.GONE
-            advancedChevron.rotation = if (expanding) 90f else 0f
-            advancedChevron.contentDescription = if (expanding) "收起高级设置" else "展开高级设置"
-        }
         findViewById<Button>(R.id.btnAccessibility).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
@@ -125,15 +110,19 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             DewuAccessibilityService.instance?.stopAutomation()
+            finalConfirmationArmed = false
+            renderFinalConfirmationButton(armed = false, locked = false)
             toast("已停止自动报名任务")
         }
-        btnAllowFinalConfirmation.setOnClickListener {
-            val granted = DewuAccessibilityService.instance?.authorizeFinalConfirmation() == true
-            if (granted) {
-                toast("一次性令牌已签发，60 秒内返回得物确认")
-            } else {
-                toast("当前状态不能授权最终确认")
+        btnFinalConfirmationMode.setOnClickListener {
+            val runtime = DewuAccessibilityService.instance?.snapshot()
+            if (runtime != null && isActiveState(runtime.state)) {
+                toast("任务运行期间不能更改最终确认设置")
+                return@setOnClickListener
             }
+            finalConfirmationArmed = !finalConfirmationArmed
+            renderFinalConfirmationButton(finalConfirmationArmed, locked = false)
+            toast(if (finalConfirmationArmed) "本轮将执行真实最终报名" else "已切换为多任务演练，不会最终报名")
         }
     }
 
@@ -163,26 +152,30 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (!cbIrreversibleAck.isChecked) {
-            toast("请先确认“报名后无法取消”")
-            return
-        }
         val config = readConfig().normalized()
         if (config.sizeSpec.isBlank()) {
             toast("请填写样品规格，避免报名时误选")
             return
         }
         prefs.save(config)
-        updateAdvancedSummary(config)
         service.startAutomation(config)
+        renderFinalConfirmationButton(config.finalConfirmationEnabled, locked = true)
 
         if (!DewuLauncher.launch(this)) {
             service.stopAutomation()
+            finalConfirmationArmed = false
+            renderFinalConfirmationButton(armed = false, locked = false)
             toast("未检测到得物，请确认已安装")
             return
         }
 
-        toast("自动报名已启动；达到目标次数后停止")
+        toast(
+            if (config.finalConfirmationEnabled) {
+                "真实报名已启动；达到目标次数后停止"
+            } else {
+                "多任务演练已启动；最终弹窗会自动取消"
+            },
+        )
     }
 
     private fun readConfig(): AutomationConfig = AutomationConfig(
@@ -190,15 +183,8 @@ class MainActivity : AppCompatActivity() {
         productCategory = spCategory.selectedItem?.toString() ?: "服装",
         sortMode = spSortMode.selectedItem?.toString() ?: "最近发布",
         targetEnrollmentCount = intValue(R.id.etTargetEnrollments, 1),
-        singleEnrollmentTestMode = cbSingleTestMode.isChecked,
+        finalConfirmationEnabled = finalConfirmationArmed,
         maxListScrolls = intValue(R.id.etMaxScrolls, 5),
-        homeBrowseCount = intValue(R.id.etHomeBrowseCount, 1),
-        restMinMinutes = intValue(R.id.etRestMin, 5),
-        restMaxMinutes = intValue(R.id.etRestMax, 10),
-        imageSwipeMin = intValue(R.id.etImageSwipeMin, 1),
-        imageSwipeMax = intValue(R.id.etImageSwipeMax, 8),
-        videoStayMinSeconds = intValue(R.id.etVideoStayMin, 5),
-        videoStayMaxSeconds = intValue(R.id.etVideoStayMax, 10),
         minPrice = doubleValue(R.id.etMinPrice, 21.0),
         maxPrice = doubleValue(R.id.etMaxPrice, 9_999_999.0),
         excludedWords = text(R.id.etExcludedWords)
@@ -206,8 +192,6 @@ class MainActivity : AppCompatActivity() {
             .map { it.trim() }
             .filter { it.isNotEmpty() },
         sizeSpec = text(R.id.etSizeSpec),
-        refreshMinSeconds = intValue(R.id.etRefreshMin, 2),
-        refreshMaxSeconds = intValue(R.id.etRefreshMax, 10),
     )
 
     private fun bindConfig(config: AutomationConfig) {
@@ -215,22 +199,11 @@ class MainActivity : AppCompatActivity() {
         selectSpinner(spCategory, config.productCategory)
         selectSpinner(spSortMode, config.sortMode)
         setText(R.id.etTargetEnrollments, config.targetEnrollmentCount)
-        cbSingleTestMode.isChecked = config.singleEnrollmentTestMode
         setText(R.id.etMaxScrolls, config.maxListScrolls)
-        setText(R.id.etHomeBrowseCount, config.homeBrowseCount)
-        setText(R.id.etRestMin, config.restMinMinutes)
-        setText(R.id.etRestMax, config.restMaxMinutes)
-        setText(R.id.etImageSwipeMin, config.imageSwipeMin)
-        setText(R.id.etImageSwipeMax, config.imageSwipeMax)
-        setText(R.id.etVideoStayMin, config.videoStayMinSeconds)
-        setText(R.id.etVideoStayMax, config.videoStayMaxSeconds)
         setText(R.id.etMinPrice, config.minPrice)
         setText(R.id.etMaxPrice, config.maxPrice)
         setText(R.id.etExcludedWords, config.excludedWords.joinToString(","))
         setText(R.id.etSizeSpec, config.sizeSpec)
-        setText(R.id.etRefreshMin, config.refreshMinSeconds)
-        setText(R.id.etRefreshMax, config.refreshMaxSeconds)
-        updateAdvancedSummary(config)
     }
 
     private fun refreshStatus() {
@@ -240,7 +213,7 @@ class MainActivity : AppCompatActivity() {
         tvDewuVersion.text = dewuVersion()?.let { "得物  $it" } ?: "得物  未检测"
 
         val screen = ScreenInfo.from(this)
-        tvScreen.text = "${screen.widthPx} × ${screen.heightPx} · 自动报名 V1 · 不点击申请入驻"
+        tvScreen.text = "${screen.widthPx} × ${screen.heightPx} · 自动报名 V1.4 · 默认演练"
 
         val runtime = DewuAccessibilityService.instance?.snapshot()
         if (runtime == null) {
@@ -252,67 +225,133 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderRuntime(runtime: AutomationRuntime) {
-        tvRuntimeStatus.text = "${runtime.state} · ${runtime.lastMessage}"
+        val active = isActiveState(runtime.state)
+        val terminal = runtime.state in setOf(
+            AutomationState.IDLE,
+            AutomationState.FINISHED,
+            AutomationState.ERROR,
+            AutomationState.PAUSED_FOR_SECURITY,
+        )
+        if (terminal && runtime.runId.isNotBlank() && runtime.runId != lastClearedTerminalRunId) {
+            finalConfirmationArmed = false
+            lastClearedTerminalRunId = runtime.runId
+        }
+        val displayedMode = if (active) runtime.finalConfirmationEnabled else finalConfirmationArmed
+        renderFinalConfirmationButton(displayedMode, locked = active)
+
+        val completed = if (runtime.finalConfirmationEnabled) {
+            runtime.enrollmentSuccessCount
+        } else {
+            runtime.rehearsalCompletedCount
+        }
+        val modeText = if (runtime.finalConfirmationEnabled) "真实报名" else "演练模式"
+        tvRuntimeStatus.text = "$modeText · $completed/${runtime.targetTaskCount} · ${runtime.lastMessage}"
         tvScannedCount.text = "已扫描\n${runtime.scannedCount}"
         tvEligibleCount.text = "符合\n${runtime.eligibleCount}"
         tvExcludedCount.text = "已跳过\n${runtime.excludedCount + runtime.enrollmentFailedCount}"
-        tvEnrollmentSuccessCount.text = "已报名\n${runtime.enrollmentSuccessCount}"
-        val waitingOperator = runtime.state == AutomationState.AWAITING_OPERATOR_CONFIRMATION
-        operatorGatePanel.visibility = if (waitingOperator) View.VISIBLE else View.GONE
-        btnAllowFinalConfirmation.isEnabled = waitingOperator && !runtime.finalConfirmationUsed
-        if (waitingOperator) {
-            tvOperatorGateSummary.text = buildString {
-                append("任务：").append(runtime.currentTaskTitle ?: "未识别")
-                append("\n详情：").append(runtime.detailCheckSummary)
-                append("\n报名信息：").append(runtime.formCheckSummary)
-                append("\n运行：").append(runtime.runId.take(8))
-            }
+        tvEnrollmentSuccessCount.text = if (runtime.finalConfirmationEnabled) {
+            "已报名\n${runtime.enrollmentSuccessCount}"
+        } else {
+            "已演练\n${runtime.rehearsalCompletedCount}"
         }
         tvAccountNotice.text = if (runtime.requiresCreatorEnrollment) {
             "当前页面仅显示“申请入驻”，任务已安全停止"
         } else {
-            if (runtime.state == AutomationState.AWAITING_OPERATOR_CONFIRMATION) {
-                "前置验证完成 · 等待一次最终确认授权"
+            if (runtime.finalConfirmationEnabled) {
+                "真实报名模式 · 最终确认后自动返回商单继续"
             } else {
-                "达人号商单模式 · 详情复筛通过后自动报名"
+                "多任务演练 · 最终弹窗停留后自动取消并继续"
             }
         }
 
-        bindResult(tvResultOne, runtime.recentResults.getOrNull(0))
-        bindResult(tvResultTwo, runtime.recentResults.getOrNull(1))
+        renderTaskResults(runtime.taskResults)
     }
 
-    private fun bindResult(view: TextView, result: PreviewTaskResult?) {
-        if (result == null) {
-            view.setBackgroundResource(R.drawable.bg_result_neutral)
-            view.setTextColor(Color.parseColor("#687278"))
-            view.text = "尚无扫描结果"
-            return
+    private fun renderTaskResults(results: List<PreviewTaskResult>) {
+        if (results == lastRenderedResults) return
+        lastRenderedResults = results.toList()
+        tvResultEmpty.visibility = if (results.isEmpty()) View.VISIBLE else View.GONE
+        resultList.visibility = if (results.isEmpty()) View.GONE else View.VISIBLE
+        resultList.removeAllViews()
+        results.forEachIndexed { index, result ->
+            val view = TextView(this)
+            val layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                if (index > 0) topMargin = (8 * resources.displayMetrics.density).toInt()
+            }
+            view.layoutParams = layoutParams
+            view.setPadding(
+                (14 * resources.displayMetrics.density).toInt(),
+                (14 * resources.displayMetrics.density).toInt(),
+                (14 * resources.displayMetrics.density).toInt(),
+                (14 * resources.displayMetrics.density).toInt(),
+            )
+            view.textSize = 13f
+            bindResult(view, result)
+            resultList.addView(view)
         }
+    }
 
-        val status = if (result.eligible) "符合" else "已排除"
+    private fun bindResult(view: TextView, result: PreviewTaskResult) {
+        val isSubscription = result.enrollmentStatus == "未点击"
+        val status = when (result.enrollmentStatus) {
+            "未点击" -> "尚未上架"
+            "仅视频" -> "仅视频"
+            else -> if (result.eligible) "符合" else "已排除"
+        }
         view.setBackgroundResource(
-            if (result.eligible) R.drawable.bg_result_eligible else R.drawable.bg_result_excluded,
+            when {
+                isSubscription -> R.drawable.bg_result_neutral
+                result.eligible -> R.drawable.bg_result_eligible
+                else -> R.drawable.bg_result_excluded
+            },
         )
-        view.setTextColor(Color.parseColor(if (result.eligible) "#256E2A" else "#4F575B"))
+        view.setTextColor(
+            Color.parseColor(
+                when {
+                    isSubscription -> "#687278"
+                    result.eligible -> "#256E2A"
+                    else -> "#4F575B"
+                },
+            ),
+        )
         view.text = buildString {
             append(status).append("  ").append(result.title)
             append('\n').append(result.rewardText)
             append(" · ").append(result.capacityText)
             append(" · ").append(result.deadlineText)
-            append('\n').append(result.reason)
+            append('\n').append("内容类型：").append(result.contentTypeText)
             append(" · ").append(result.enrollmentStatus)
+            append('\n').append(result.reason)
+            if (!result.matchedField.isNullOrBlank()) {
+                append(" · 命中：").append(result.matchedField)
+                if (!result.matchedWord.isNullOrBlank()) append(" / ").append(result.matchedWord)
+            }
         }
     }
 
-    private fun updateAdvancedSummary(config: AutomationConfig) {
-        tvAdvancedSummary.text =
-            if (config.singleEnrollmentTestMode) {
-                "单次实测 · 最终确认前暂停 · 下滑 ${config.maxListScrolls} 次"
-            } else {
-                "目标 ${config.targetEnrollmentCount} 个 · 下滑 ${config.maxListScrolls} 次 · 作品 ${config.homeBrowseCount} 个"
-            }
+    private fun renderFinalConfirmationButton(armed: Boolean, locked: Boolean) {
+        btnFinalConfirmationMode.isEnabled = !locked
+        btnFinalConfirmationMode.text = if (armed) {
+            "最终确认报名：已开启（仅本轮）"
+        } else {
+            "最终确认报名：未开启"
+        }
+        btnFinalConfirmationMode.backgroundTintList = ColorStateList.valueOf(
+            Color.parseColor(if (armed) "#C66A00" else "#FFFFFF"),
+        )
+        btnFinalConfirmationMode.strokeColor = ColorStateList.valueOf(Color.parseColor("#C66A00"))
+        btnFinalConfirmationMode.setTextColor(Color.parseColor(if (armed) "#FFFFFF" else "#B96200"))
     }
+
+    private fun isActiveState(state: AutomationState): Boolean = state !in setOf(
+        AutomationState.IDLE,
+        AutomationState.FINISHED,
+        AutomationState.ERROR,
+        AutomationState.PAUSED_FOR_SECURITY,
+    )
 
     @Suppress("DEPRECATION")
     private fun dewuVersion(): String? = runCatching {

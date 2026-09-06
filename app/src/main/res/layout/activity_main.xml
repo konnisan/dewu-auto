@@ -99,7 +99,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="自动报名后无法取消"
+                    android:text="最终确认报名后无法取消"
                     android:textColor="#B96200"
                     android:textSize="15sp"
                     android:textStyle="bold" />
@@ -108,7 +108,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="仅在列表与详情双重筛选通过后提交；遇到未知页面立即停止"
+                    android:text="默认演练会在最终弹窗取消；仅本轮人工开启后才会真实确认"
                     android:textColor="#8D5C25"
                     android:textSize="12sp" />
             </LinearLayout>
@@ -292,7 +292,7 @@
                         android:layout_height="46dp"
                         android:background="@drawable/bg_input"
                         android:gravity="center_vertical"
-                        android:hint="例如：露脸,拍视频；用逗号或 ## 分隔"
+                        android:hint="例如：口播,寄回；用逗号或 ## 分隔"
                         android:paddingHorizontal="12dp"
                         android:singleLine="true"
                         android:textColor="#15191C"
@@ -360,148 +360,104 @@
         </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/advancedHeader"
             android:layout_width="match_parent"
-            android:layout_height="70dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:background="#FFFFFF"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="20dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="循环与执行设置"
-                    android:textColor="#15191C"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvAdvancedSummary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="下滑 5 次 · 刷新 2–10 秒"
-                    android:textColor="#687278"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <ImageView
-                android:id="@+id/ivAdvancedChevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:contentDescription="展开循环与执行设置"
-                android:src="@drawable/ic_chevron"
-                android:tint="#687278" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/advancedPanel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#FFFFFF"
             android:orientation="vertical"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingBottom="18dp"
-            android:visibility="gone">
-
-            <TextView style="@style/ExecutionFieldLabel" android:text="目标报名成功次数" />
-            <EditText android:id="@+id/etTargetEnrollments" style="@style/ExecutionFieldInput" android:inputType="number" android:text="1" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="每种排序最大下滑次数" />
-            <EditText android:id="@+id/etMaxScrolls" style="@style/ExecutionFieldInput" android:inputType="number" android:text="5" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="页面刷新等待（最小秒）" />
-            <EditText android:id="@+id/etRefreshMin" style="@style/ExecutionFieldInput" android:inputType="number" android:text="2" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="页面刷新等待（最大秒）" />
-            <EditText android:id="@+id/etRefreshMax" style="@style/ExecutionFieldInput" android:inputType="number" android:text="10" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="每轮首页作品数量（0 跳过）" />
-            <EditText android:id="@+id/etHomeBrowseCount" style="@style/ExecutionFieldInput" android:inputType="number" android:text="1" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="轮次休息（最小分钟）" />
-            <EditText android:id="@+id/etRestMin" style="@style/ExecutionFieldInput" android:inputType="number" android:text="0" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="轮次休息（最大分钟）" />
-            <EditText android:id="@+id/etRestMax" style="@style/ExecutionFieldInput" android:inputType="number" android:text="0" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="图文滑动（最小次数）" />
-            <EditText android:id="@+id/etImageSwipeMin" style="@style/ExecutionFieldInput" android:inputType="number" android:text="1" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="图文滑动（最大次数）" />
-            <EditText android:id="@+id/etImageSwipeMax" style="@style/ExecutionFieldInput" android:inputType="number" android:text="8" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="视频停留（最小秒）" />
-            <EditText android:id="@+id/etVideoStayMin" style="@style/ExecutionFieldInput" android:inputType="number" android:text="5" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="视频停留（最大秒）" />
-            <EditText android:id="@+id/etVideoStayMax" style="@style/ExecutionFieldInput" android:inputType="number" android:text="10" />
-            <TextView style="@style/ExecutionFieldLabel" android:text="卡密（Debug 可留空）" />
-            <EditText android:id="@+id/etCardKey" style="@style/ExecutionFieldInput" android:inputType="text" />
-        </LinearLayout>
-
-        <CheckBox
-            android:id="@+id/cbSingleTestMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#E8F7F7"
-            android:buttonTint="#079CA3"
-            android:checked="true"
-            android:padding="16dp"
-            android:text="单次实测模式：目标固定为 1，到最终确认弹窗暂停"
-            android:textColor="#067F85"
-            android:textSize="13sp" />
-
-        <CheckBox
-            android:id="@+id/cbIrreversibleAck"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#FFF7EA"
-            android:buttonTint="#C66A00"
-            android:padding="16dp"
-            android:text="我已确认：任务报名后无法取消，筛选通过后允许自动提交"
-            android:textColor="#8D5C25"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:id="@+id/operatorGatePanel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#FFF7EA"
-            android:orientation="vertical"
-            android:padding="16dp"
-            android:visibility="gone">
+            android:padding="20dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="最终确认闸门"
-                android:textColor="#B96200"
-                android:textSize="16sp"
+                android:text="固定安全规则"
+                android:textColor="#15191C"
+                android:textSize="18sp"
                 android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/tvOperatorGateSummary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="等待前置验证"
-                android:textColor="#8D5C25"
+                android:layout_marginTop="8dp"
+                android:lineSpacingExtra="4dp"
+                android:text="• 仅视频任务直接跳过\n• 必须露脸直接跳过\n• 提到露脸但明确可选上身不露脸时通过\n• 达人要求通过后继续检查拍摄要求\n• 订阅提醒只记录，绝不点击"
+                android:textColor="#4F575B"
                 android:textSize="13sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAllowFinalConfirmation"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:layout_marginTop="12dp"
-                android:backgroundTint="#C66A00"
-                android:text="允许本次最终确认"
-                android:textAllCaps="false"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                app:cornerRadius="8dp" />
         </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#FFFFFF"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="执行范围"
+                android:textColor="#15191C"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView style="@style/ExecutionFieldLabel" android:text="目标处理任务数" />
+            <EditText android:id="@+id/etTargetEnrollments" style="@style/ExecutionFieldInput" android:inputType="number" android:text="1" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="达到该数量后停止；演练与真实报名分别计数"
+                android:textColor="#687278"
+                android:textSize="11sp" />
+
+            <TextView style="@style/ExecutionFieldLabel" android:text="最大下滑次数" />
+            <EditText android:id="@+id/etMaxScrolls" style="@style/ExecutionFieldInput" android:inputType="number" android:text="5" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="当前排序从顶部扫描后，列表最多再向下滑动的次数"
+                android:textColor="#687278"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#FFFFFF"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="授权"
+                android:textColor="#15191C"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+            <TextView style="@style/ExecutionFieldLabel" android:text="卡密（Debug 可留空）" />
+            <EditText android:id="@+id/etCardKey" style="@style/ExecutionFieldInput" android:inputType="text" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFinalConfirmationMode"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginStart="20dp"
+            android:layout_marginTop="14dp"
+            android:layout_marginEnd="20dp"
+            android:layout_marginBottom="14dp"
+            android:backgroundTint="#FFFFFF"
+            android:text="最终确认报名：未开启"
+            android:textAllCaps="false"
+            android:textColor="#B96200"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            app:cornerRadius="8dp"
+            app:strokeColor="#C66A00"
+            app:strokeWidth="1dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -515,7 +471,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
                 android:backgroundTint="#079CA3"
-                android:text="开始自动报名"
+                android:text="开始执行"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
@@ -558,7 +514,7 @@
             android:padding="20dp">
 
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="扫描结果" android:textColor="#15191C" android:textSize="20sp" android:textStyle="bold" />
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="最近一次页面解析" android:textColor="#687278" android:textSize="12sp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="本轮全部任务；状态变化会更新原记录" android:textColor="#687278" android:textSize="12sp" />
 
             <LinearLayout android:layout_width="match_parent" android:layout_height="82dp" android:gravity="center" android:orientation="horizontal">
                 <TextView android:id="@+id/tvScannedCount" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="已扫描\n0" android:textColor="#15191C" android:textSize="16sp" android:textStyle="bold" />
@@ -567,8 +523,22 @@
                 <TextView android:id="@+id/tvExcludedCount" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="已跳过\n0" android:textColor="#15191C" android:textSize="16sp" android:textStyle="bold" />
             </LinearLayout>
 
-            <TextView android:id="@+id/tvResultOne" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_result_neutral" android:padding="14dp" android:text="尚无扫描结果" android:textColor="#687278" android:textSize="13sp" />
-            <TextView android:id="@+id/tvResultTwo" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:background="@drawable/bg_result_neutral" android:padding="14dp" android:text="启动后显示筛选、详情复核与报名状态" android:textColor="#687278" android:textSize="13sp" />
+            <TextView
+                android:id="@+id/tvResultEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_result_neutral"
+                android:padding="14dp"
+                android:text="尚无扫描结果"
+                android:textColor="#687278"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/resultList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone" />
         </LinearLayout>
 
         <TextView
@@ -577,7 +547,7 @@
             android:layout_height="wrap_content"
             android:gravity="center"
             android:padding="18dp"
-            android:text="自动报名 V1 · 不会点击申请入驻"
+            android:text="自动报名 V1.4 · 默认演练，不点击申请入驻"
             android:textColor="#687278"
             android:textSize="12sp" />
     </LinearLayout>

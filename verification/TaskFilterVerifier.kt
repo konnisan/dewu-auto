@@ -1,8 +1,14 @@
 import com.konnisan.dewuauto.automation.TaskCardParser
 import com.konnisan.dewuauto.automation.TaskEligibilityEvaluator
 import com.konnisan.dewuauto.automation.TaskDetailParser
+import com.konnisan.dewuauto.automation.TaskContentType
+import com.konnisan.dewuauto.automation.PreviewTaskResult
+import com.konnisan.dewuauto.automation.TaskResultLedger
+import com.konnisan.dewuauto.automation.TaskActionPolicy
 import com.konnisan.dewuauto.automation.EnrollmentFormHandler
-import com.konnisan.dewuauto.automation.SingleEnrollmentGate
+import com.konnisan.dewuauto.automation.EnrollmentRunPolicy
+import com.konnisan.dewuauto.automation.FinalConfirmationGuard
+import com.konnisan.dewuauto.automation.FinalNoticeDecision
 import com.konnisan.dewuauto.automation.CategorySelectionRules
 import com.konnisan.dewuauto.automation.DewuSelectors
 import com.konnisan.dewuauto.config.AutomationConfig
@@ -135,15 +141,31 @@ fun main() {
 
     val parsedDetail = requireNotNull(
         TaskDetailParser.parse(
-            "任务详情 | 配件体验任务 | 任务商品 | 石榴石三圈手串 | 商品描述 | " +
+            "任务详情 | 配件体验任务 | 仅图文 | 任务商品 | 石榴石三圈手串 | 商品描述 | " +
                 "发布时间 | 2026-09-01 至 2026-09-15 | 合作方式 | 现金收益，拍摄后商品需寄回 | " +
-                "达人要求 | 选中后加v | 发布要求 | 页面示例文字包含露脸",
+                "达人要求 | 选中后加v | 发布要求 | 页面示例文字包含露脸 | " +
+                "合作详情 | 拍摄要求 | 鞋子需完整展示 | 文案要求 | 原创文案",
             fallbackProductName = "列表备用标题",
         ),
     )
     check(parsedDetail.productName == "石榴石三圈手串")
     check(parsedDetail.cooperationMethod == "现金收益，拍摄后商品需寄回")
     check(parsedDetail.creatorRequirements == "选中后加v")
+    check(parsedDetail.shootingRequirements == "鞋子需完整展示")
+    check(parsedDetail.contentType == TaskContentType.IMAGE_ONLY)
+
+    check(
+        TaskDetailParser.parseContentType(listOf("任务详情", "仅视频")) ==
+            TaskContentType.VIDEO_ONLY,
+    )
+    check(
+        TaskDetailParser.parseContentType(listOf("任务详情", "图文/视频")) ==
+            TaskContentType.IMAGE_OR_VIDEO,
+    )
+    check(
+        TaskDetailParser.parseContentType(listOf("任务详情", "未知类型")) ==
+            TaskContentType.UNKNOWN,
+    )
 
     val productBlocked = TaskEligibilityEvaluator.evaluateDetail(
         parsedDetail.copy(productName = "需要露脸的手串"),
@@ -161,7 +183,91 @@ fun main() {
         parsedDetail.copy(creatorRequirements = "达人必须真人露脸"),
         AutomationConfig(excludedWords = listOf("露脸")),
     )
-    check(!requirementsBlocked.eligible && requirementsBlocked.reason == "达人要求命中屏蔽词：露脸")
+    check(!requirementsBlocked.eligible && requirementsBlocked.reason == "达人要求 明确要求露脸")
+    check(requirementsBlocked.matchedField == "达人要求")
+    check(requirementsBlocked.matchedWord == "露脸")
+
+    val slashAlternativeAccepted = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(creatorRequirements = "照片包括露脸/上身照"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(slashAlternativeAccepted.eligible)
+
+    val orAlternativeAccepted = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(creatorRequirements = "露脸或上身照，任选其一"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(orAlternativeAccepted.eligible)
+
+    val noFaceUpperBodyAccepted = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(creatorRequirements = "支持上身不露脸"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(noFaceUpperBodyAccepted.eligible)
+
+    val halfBodyAlternativeAccepted = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(creatorRequirements = "露脸或上半身照，任选其一"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(halfBodyAlternativeAccepted.eligible)
+
+    val halfBodyBothRequiredBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(creatorRequirements = "需要露脸和上半身照"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(!halfBodyBothRequiredBlocked.eligible)
+
+    val bothRequiredBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(creatorRequirements = "需要露脸和上身照"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(!bothRequiredBlocked.eligible && bothRequiredBlocked.reason == "达人要求 明确要求露脸")
+
+    val shootingRequiredFaceBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(shootingRequirements = "拍摄时必须露脸"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(!shootingRequiredFaceBlocked.eligible && shootingRequiredFaceBlocked.reason == "拍摄要求 明确要求露脸")
+
+    val realDeviceFacePhotoBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(shootingRequirements = "照片包括露脸全身照、上脚照"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(!realDeviceFacePhotoBlocked.eligible)
+
+    val shootingAlternativeAccepted = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(shootingRequirements = "可以露脸或者上身照"),
+        AutomationConfig(excludedWords = listOf("露脸")),
+    )
+    check(shootingAlternativeAccepted.eligible)
+
+    val shootingOrdinaryWordBlocked = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(shootingRequirements = "必须拍摄口播"),
+        AutomationConfig(excludedWords = listOf("口播")),
+    )
+    check(!shootingOrdinaryWordBlocked.eligible)
+    check(shootingOrdinaryWordBlocked.reason == "拍摄要求命中屏蔽词：口播")
+
+    val videoOnlyBlocked = TaskEligibilityEvaluator.evaluateDetailOverview(
+        parsedDetail.copy(contentType = TaskContentType.VIDEO_ONLY),
+        AutomationConfig(),
+    )
+    check(!videoOnlyBlocked.eligible && videoOnlyBlocked.reason == "内容类型为仅视频")
+
+    val unknownTypeBlocked = TaskEligibilityEvaluator.evaluateDetailOverview(
+        parsedDetail.copy(contentType = TaskContentType.UNKNOWN),
+        AutomationConfig(),
+    )
+    check(!unknownTypeBlocked.eligible && unknownTypeBlocked.reason == "内容类型未识别")
+
+    val creatorShortCircuitsShooting = TaskEligibilityEvaluator.evaluateDetail(
+        parsedDetail.copy(
+            creatorRequirements = "必须露脸",
+            shootingRequirements = "拍摄要求命中另一个词",
+        ),
+        AutomationConfig(excludedWords = listOf("另一个词")),
+    )
+    check(creatorShortCircuitsShooting.reason == "达人要求 明确要求露脸")
 
     val outsideFieldsAccepted = TaskEligibilityEvaluator.evaluateDetail(
         parsedDetail,
@@ -181,17 +287,62 @@ fun main() {
     check(!EnrollmentFormHandler.isConfirmedSpecBounds(1080, 2259, 57, 705, 168, 771))
     check(!EnrollmentFormHandler.isConfirmedSpecBounds(1080, 2259, 345, 2184, 1023, 2226))
 
-    val gate = SingleEnrollmentGate()
-    gate.reset("run-1")
-    check(!gate.grant("wrong-run", "task-a", nowMs = 1_000L))
-    check(gate.grant("run-1", "task-a", nowMs = 1_000L, ttlMs = 60_000L))
-    check(!gate.consume("run-1", "task-b", nowMs = 2_000L))
-    check(gate.grant("run-1", "task-a", nowMs = 3_000L, ttlMs = 10L))
-    check(!gate.consume("run-1", "task-a", nowMs = 3_011L))
-    check(gate.grant("run-1", "task-a", nowMs = 4_000L))
-    check(gate.consume("run-1", "task-a", nowMs = 4_001L))
-    check(gate.finalConfirmationUsed)
-    check(!gate.grant("run-1", "task-a", nowMs = 5_000L))
+    check(!AutomationConfig().finalConfirmationEnabled)
+    check(AutomationConfig(targetEnrollmentCount = 5).normalized().targetEnrollmentCount == 5)
+    check(
+        AutomationConfig(targetEnrollmentCount = 20, finalConfirmationEnabled = true)
+            .normalized().targetEnrollmentCount == 20,
+    )
+    check(
+        EnrollmentRunPolicy.finalNoticeDecision(finalConfirmationEnabled = false) ==
+            FinalNoticeDecision.REHEARSE_CANCEL,
+    )
+    check(
+        EnrollmentRunPolicy.finalNoticeDecision(finalConfirmationEnabled = true) ==
+            FinalNoticeDecision.CONFIRM,
+    )
+    check(EnrollmentRunPolicy.completedCount(false, 2, 0) == 2)
+    check(EnrollmentRunPolicy.completedCount(true, 0, 2) == 2)
+    check(EnrollmentRunPolicy.targetReached(false, 2, 0, 2))
+    check(!EnrollmentRunPolicy.targetReached(false, 1, 9, 2))
+    check(EnrollmentRunPolicy.targetReached(true, 9, 2, 2))
+    check(!EnrollmentRunPolicy.targetReached(true, 9, 1, 2))
+
+    val guard = FinalConfirmationGuard()
+    guard.reset("run-1")
+    check(!guard.tryAcquire("wrong-run", "task-a"))
+    check(guard.tryAcquire("run-1", "task-a"))
+    check(!guard.tryAcquire("run-1", "task-a"))
+    check(guard.tryAcquire("run-1", "task-b"))
+    check(guard.hasAttempted("task-a"))
+    check(guard.hasAttempted("task-b"))
+    check(guard.attemptCount() == 2)
+    guard.reset("run-2")
+    check(!guard.hasAttempted("task-a"))
+    check(guard.tryAcquire("run-2", "task-a"))
+
+    fun result(signature: String, status: String = "未报名") = PreviewTaskResult(
+        signature = signature,
+        title = "任务 $signature",
+        rewardText = "现金奖励 ¥30",
+        capacityText = "1/10人",
+        deadlineText = "1天后截止",
+        eligible = true,
+        reason = "通过",
+        enrollmentStatus = status,
+    )
+    var ledger = emptyList<PreviewTaskResult>()
+    ledger = TaskResultLedger.upsert(ledger, result("a"))
+    ledger = TaskResultLedger.upsert(ledger, result("b"))
+    ledger = TaskResultLedger.upsert(ledger, result("c"))
+    check(ledger.map(PreviewTaskResult::signature) == listOf("a", "b", "c"))
+    ledger = TaskResultLedger.upsert(ledger, result("b", status = "已演练，未报名"))
+    check(ledger.size == 3)
+    check(ledger[1].enrollmentStatus == "已演练，未报名")
+    check(TaskActionPolicy.canOpenTask(DewuSelectors.LIST_REGISTER))
+    check(!TaskActionPolicy.canOpenTask("立即报名"))
+    check(!TaskActionPolicy.canOpenTask("订阅提醒"))
+    check(TaskActionPolicy.isSubscriptionReminder("订阅提醒"))
 
     check(
         TaskEligibilityEvaluator.splitTerms("内定##复投##直接报名") ==
@@ -200,6 +351,7 @@ fun main() {
 
     println(
         "TASK_FILTER_OK categories=10 categoryGeometry=33 parser=5 rewardBoundaries=9 " +
-            "webViewSplit=1 listFilters=4 threeFieldFilters=7 formRules=6 gate=8 specGeometry=3 splitTerms=1",
+        "webViewSplit=1 listFilters=4 detailFilters=22 formRules=6 runPolicy=10 " +
+            "multiTaskGuard=9 resultLedger=5 actionPolicy=4 specGeometry=3 splitTerms=1",
     )
 }

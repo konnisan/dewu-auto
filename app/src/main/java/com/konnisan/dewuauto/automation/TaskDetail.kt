@@ -4,8 +4,17 @@ data class TaskDetail(
     val productName: String,
     val cooperationMethod: String,
     val creatorRequirements: String,
+    val shootingRequirements: String,
+    val contentType: TaskContentType,
     val rawText: String,
 )
+
+enum class TaskContentType(val displayName: String) {
+    IMAGE_ONLY("仅图文"),
+    IMAGE_OR_VIDEO("图文/视频"),
+    VIDEO_ONLY("仅视频"),
+    UNKNOWN("未识别"),
+}
 
 object TaskDetailParser {
     fun parse(rawText: String, fallbackProductName: String? = null): TaskDetail? =
@@ -31,8 +40,24 @@ object TaskDetailParser {
                     .ifBlank { inferredTitle.orEmpty() },
             cooperationMethod = sectionContent(segments, "合作方式"),
             creatorRequirements = sectionContent(segments, "达人要求"),
+            shootingRequirements = sectionContent(segments, "拍摄要求"),
+            contentType = parseContentType(segments),
             rawText = normalized,
         )
+    }
+
+    internal fun parseContentType(segments: List<String>): TaskContentType {
+        val values = segments.map { it.replace(Regex("\\s+"), "").trim() }
+        return when {
+            values.any { it == "仅视频" || it == "只限视频" || it == "仅支持视频" } ->
+                TaskContentType.VIDEO_ONLY
+            values.any { it == "仅图文" || it == "只限图文" || it == "仅支持图文" } ->
+                TaskContentType.IMAGE_ONLY
+            values.any {
+                it in setOf("图文/视频", "图文／视频", "图文或视频", "图文或者视频", "图文视频二选一")
+            } -> TaskContentType.IMAGE_OR_VIDEO
+            else -> TaskContentType.UNKNOWN
+        }
     }
 
     private fun sectionContent(segments: List<String>, label: String): String {

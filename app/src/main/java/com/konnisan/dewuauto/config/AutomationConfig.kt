@@ -5,47 +5,21 @@ data class AutomationConfig(
     val productCategory: String = "服装",
     val sortMode: String = "最近发布",
     val targetEnrollmentCount: Int = 1,
-    val singleEnrollmentTestMode: Boolean = true,
+    val finalConfirmationEnabled: Boolean = false,
     val maxListScrolls: Int = 5,
-    val homeBrowseCount: Int = 1,
-    val restMinMinutes: Int = 0,
-    val restMaxMinutes: Int = 0,
-    val imageSwipeMin: Int = 1,
-    val imageSwipeMax: Int = 8,
-    val videoStayMinSeconds: Int = 5,
-    val videoStayMaxSeconds: Int = 10,
     val minPrice: Double = 21.0,
     val maxPrice: Double = 9_999_999.0,
     val excludedWords: List<String> = emptyList(),
     val sizeSpec: String = "",
-    val refreshMinSeconds: Int = 2,
-    val refreshMaxSeconds: Int = 10,
 ) {
     fun normalized(): AutomationConfig {
-        val minRest = restMinMinutes.coerceAtLeast(0)
-        val maxRest = restMaxMinutes.coerceAtLeast(minRest)
-        val minSwipe = imageSwipeMin.coerceAtLeast(0)
-        val maxSwipe = imageSwipeMax.coerceAtLeast(minSwipe)
-        val minVideoStay = videoStayMinSeconds.coerceAtLeast(1)
-        val maxVideoStay = videoStayMaxSeconds.coerceAtLeast(minVideoStay)
-        val minRefresh = refreshMinSeconds.coerceAtLeast(1)
-        val maxRefresh = refreshMaxSeconds.coerceAtLeast(minRefresh)
         val lowPrice = minOf(minPrice, maxPrice)
         val highPrice = maxOf(minPrice, maxPrice)
         return copy(
-            targetEnrollmentCount = if (singleEnrollmentTestMode) 1 else targetEnrollmentCount.coerceIn(1, 20),
+            targetEnrollmentCount = targetEnrollmentCount.coerceIn(1, 20),
             maxListScrolls = maxListScrolls.coerceIn(1, 50),
-            homeBrowseCount = homeBrowseCount.coerceIn(0, 20),
-            restMinMinutes = minRest.coerceAtMost(120),
-            restMaxMinutes = maxRest.coerceAtMost(120),
-            imageSwipeMin = minSwipe.coerceAtMost(20),
-            imageSwipeMax = maxSwipe.coerceAtMost(20),
-            videoStayMinSeconds = minVideoStay.coerceAtMost(300),
-            videoStayMaxSeconds = maxVideoStay.coerceAtMost(300),
             minPrice = lowPrice,
             maxPrice = highPrice,
-            refreshMinSeconds = minRefresh.coerceAtMost(60),
-            refreshMaxSeconds = maxRefresh.coerceAtMost(60),
             excludedWords = excludedWords.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
         )
     }
