@@ -1,0 +1,25 @@
+server:
+  address: 127.0.0.1
+  port: ${LICENSE_PORT:8080}
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: dewu-license-server
+  datasource:
+    driver-class-name: org.sqlite.JDBC
+    url: jdbc:sqlite:${LICENSE_DB_PATH:/data/dewu-license/data/license.db}
+    hikari:
+      maximum-pool-size: 1
+      minimum-idle: 1
+      connection-timeout: 5000
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+logging:
+  file:
+    name: ${LICENSE_LOG_FILE:/data/dewu-license/logs/app.log}
+  level:
+    root: INFO
