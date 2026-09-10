@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dewu License Console</title>
+  <style>
+    :root{--bg:#0b1020;--panel:#121a2d;--panel2:#18233b;--text:#eef3ff;--muted:#8ea0c4;--line:#263555;--accent:#6ee7c7;--accent2:#5ea0ff;--danger:#ff7a8b;--warn:#ffd166;--ok:#6ee7a8}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:linear-gradient(180deg,#09101e,#0d1425 45%,#0b1020);color:var(--text);min-height:100vh}
+    .wrap{max-width:1220px;margin:0 auto;padding:28px 20px 60px}.top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;margin-bottom:22px}.title h1{font-size:28px;margin:0 0 8px}.title p{margin:0;color:var(--muted);font-size:14px}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:rgba(255,255,255,.03);padding:8px 12px;border-radius:999px;color:var(--muted);font-size:13px}.dot{width:8px;height:8px;border-radius:50%;background:#66738f}.dot.ok{background:var(--ok);box-shadow:0 0 14px rgba(110,231,168,.6)}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.card{background:rgba(18,26,45,.92);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 16px 40px rgba(0,0,0,.16)}.stat .label{color:var(--muted);font-size:13px}.stat .value{font-size:30px;font-weight:750;margin-top:8px}.stat .hint{color:#7083a9;font-size:12px;margin-top:4px}
+    .toolbar{display:grid;grid-template-columns:1.1fr 1fr;gap:14px;margin-bottom:18px}.section-title{font-size:15px;font-weight:700;margin-bottom:14px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}input,select{background:#0d1528;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:11px 12px;outline:none;min-width:0}input:focus,select:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(94,160,255,.12)}input.token{flex:1;min-width:220px}.grow{flex:1}.btn{border:0;border-radius:10px;padding:11px 14px;font-weight:700;cursor:pointer;color:#07121b;background:var(--accent);transition:.15s}.btn:hover{transform:translateY(-1px);filter:brightness(1.04)}.btn.secondary{background:#253553;color:#dce7ff}.btn.danger{background:#452434;color:#ffb2bd}.btn.warn{background:#4a3a1f;color:#ffe39a}.btn.small{padding:7px 10px;font-size:12px}.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+    .table-card{padding:0;overflow:hidden}.table-head{display:flex;justify-content:space-between;align-items:center;padding:18px;border-bottom:1px solid var(--line)}.search{width:260px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:14px 16px;border-bottom:1px solid rgba(38,53,85,.75);vertical-align:middle}th{color:#91a5cc;font-size:12px;font-weight:650;background:#111a2d;position:sticky;top:0}tbody tr:hover{background:rgba(255,255,255,.025)}.key{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-weight:700;color:#dfe8ff}.badge{display:inline-flex;padding:5px 8px;border-radius:999px;font-weight:700;font-size:11px}.badge.active{background:rgba(110,231,168,.11);color:var(--ok)}.badge.disabled{background:rgba(255,122,139,.11);color:var(--danger)}.muted{color:var(--muted)}.device{max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.actions{display:flex;gap:6px;flex-wrap:wrap}.empty{text-align:center;color:var(--muted);padding:42px!important}.toast{position:fixed;right:20px;bottom:20px;min-width:240px;max-width:420px;background:#15213a;border:1px solid var(--line);padding:13px 15px;border-radius:12px;box-shadow:0 16px 45px rgba(0,0,0,.35);display:none;z-index:10}.toast.show{display:block}.toast.error{border-color:#683143;color:#ffc1c9}.footer{color:#65789d;text-align:center;margin-top:18px;font-size:12px}
+    @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr}.top{flex-direction:column}.table-card{overflow-x:auto}table{min-width:920px}.search{width:190px}}
+    @media(max-width:520px){.grid{grid-template-columns:1fr}.wrap{padding:18px 12px 40px}.card{border-radius:13px}.title h1{font-size:23px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="title"><h1>Dewu License Console</h1><p>卡密授权、设备绑定与在线会话管理</p></div>
+    <div class="pill"><span id="statusDot" class="dot"></span><span id="serverStatus">未连接</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card stat"><div class="label">全部卡密</div><div id="countAll" class="value">0</div><div class="hint">当前数据库总量</div></div>
+    <div class="card stat"><div class="label">启用</div><div id="countActive" class="value">0</div><div class="hint">可正常验证</div></div>
+    <div class="card stat"><div class="label">已绑定设备</div><div id="countBound" class="value">0</div><div class="hint">首次验证后自动绑定</div></div>
+    <div class="card stat"><div class="label">在线会话</div><div id="countSessions" class="value">0</div><div class="hint">当前有效 session</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="card">
+      <div class="section-title">管理员认证</div>
+      <div class="row">
+        <input id="tokenInput" class="token" type="password" autocomplete="off" placeholder="输入 LICENSE_ADMIN_TOKEN">
+        <button id="connectBtn" class="btn">连接</button>
+        <button id="clearBtn" class="btn secondary">清除</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:10px">Token 仅保存在当前浏览器会话 sessionStorage，不写入页面和数据库。</div>
+    </div>
+    <div class="card">
+      <div class="section-title">创建卡密</div>
+      <div class="row">
+        <select id="daysSelect">
+          <option value="1">1 天</option><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option><option value="0">永久</option>
+        </select>
+        <input id="customKey" class="grow" placeholder="自定义卡密（可留空自动生成）">
+        <button id="createBtn" class="btn">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card table-card">
+    <div class="table-head">
+      <div><div class="section-title" style="margin:0">卡密列表</div><div id="lastRefresh" class="muted" style="font-size:12px;margin-top:5px">尚未刷新</div></div>
+      <div class="row"><input id="searchInput" class="search" placeholder="搜索卡密 / 设备"><button id="refreshBtn" class="btn secondary">刷新</button></div>
+    </div>
+    <table>
+      <thead><tr><th>卡密</th><th>状态</th><th>设备</th><th>到期时间</th><th>最后心跳</th><th>会话</th><th>操作</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="7" class="empty">输入管理员 Token 后连接</td></tr></tbody>
+    </table>
+  </div>
+  <div class="footer">Dewu License Server · 管理接口受 Bearer Token 保护</div>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+  const $=id=>document.getElementById(id); let licenses=[];
+  const token=()=>$('tokenInput').value.trim();
+  $('tokenInput').value=sessionStorage.getItem('dewuAdminToken')||'';
+  function authHeaders(json=false){const h={Authorization:'Bearer '+token()};if(json)h['Content-Type']='application/json';return h}
+  function toast(msg,error=false){const el=$('toast');el.textContent=msg;el.className='toast show'+(error?' error':'');clearTimeout(window.__toastTimer);window.__toastTimer=setTimeout(()=>el.className='toast',2800)}
+  async function api(path,opt={}){const res=await fetch(path,{...opt,headers:{...(opt.headers||{}),...authHeaders(!!opt.body)}});if(!res.ok){let msg=`HTTP ${res.status}`;try{const d=await res.json();msg=d.detail||d.message||d.error||msg}catch{}throw new Error(msg)}return res.status===204?null:res.json()}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+  function shortDevice(v){if(!v)return '<span class="muted">未绑定</span>';const s=String(v);return `<span class="device" title="${esc(s)}">${esc(s.length>18?s.slice(0,8)+'…'+s.slice(-6):s)}</span>`}
+  function fmt(v){if(!v)return '<span class="muted">永久 / 无记录</span>';return esc(String(v).replace('T',' '))}
+  function render(){const q=$('searchInput').value.trim().toLowerCase();const rows=licenses.filter(x=>!q||String(x.cardKey||'').toLowerCase().includes(q)||String(x.boundDeviceId||'').toLowerCase().includes(q));$('countAll').textContent=licenses.length;$('countActive').textContent=licenses.filter(x=>x.status==='ACTIVE').length;$('countBound').textContent=licenses.filter(x=>x.boundDeviceId).length;$('countSessions').textContent=licenses.reduce((n,x)=>n+Number(x.sessionCount||0),0);const tb=$('tbody');if(!rows.length){tb.innerHTML='<tr><td colspan="7" class="empty">没有匹配的卡密</td></tr>';return}tb.innerHTML=rows.map(x=>{const active=x.status==='ACTIVE';return `<tr><td><span class="key">${esc(x.cardKey)}</span></td><td><span class="badge ${active?'active':'disabled'}">${esc(x.status)}</span></td><td>${shortDevice(x.boundDeviceId)}</td><td>${fmt(x.expiresAt)}</td><td>${fmt(x.lastHeartbeatAt)}</td><td>${Number(x.sessionCount||0)}</td><td><div class="actions"><button class="btn secondary small" data-act="copy" data-key="${esc(x.cardKey)}">复制</button><button class="btn ${active?'danger':'secondary'} small" data-act="status" data-key="${esc(x.cardKey)}" data-status="${active?'DISABLED':'ACTIVE'}">${active?'禁用':'启用'}</button><button class="btn warn small" data-act="unbind" data-key="${esc(x.cardKey)}" ${x.boundDeviceId?'':'disabled'}>解绑</button></div></td></tr>`}).join('')}
+  async function load(){if(!token()){toast('请先输入管理员 Token',true);return}try{sessionStorage.setItem('dewuAdminToken',token());licenses=await api('/admin/api/licenses');$('statusDot').className='dot ok';$('serverStatus').textContent='已连接';$('lastRefresh').textContent='刷新时间 '+new Date().toLocaleString();render()}catch(e){$('statusDot').className='dot';$('serverStatus').textContent='连接失败';toast(e.message,true)}}
+  $('connectBtn').onclick=load;$('refreshBtn').onclick=load;$('clearBtn').onclick=()=>{sessionStorage.removeItem('dewuAdminToken');$('tokenInput').value='';licenses=[];$('statusDot').className='dot';$('serverStatus').textContent='未连接';render()};$('searchInput').oninput=render;
+  $('createBtn').onclick=async()=>{if(!token())return toast('请先连接管理端',true);const days=Number($('daysSelect').value);const cardKey=$('customKey').value.trim();try{const d=await api('/admin/api/licenses',{method:'POST',body:JSON.stringify({days,cardKey:cardKey||null})});$('customKey').value='';toast('已创建 '+d.cardKey);await load()}catch(e){toast(e.message,true)}};
+  $('tbody').onclick=async e=>{const b=e.target.closest('button[data-act]');if(!b)return;const key=b.dataset.key;try{if(b.dataset.act==='copy'){await navigator.clipboard.writeText(key);toast('已复制 '+key);return}if(b.dataset.act==='status'){await api('/admin/api/licenses/'+encodeURIComponent(key)+'/status',{method:'PATCH',body:JSON.stringify({status:b.dataset.status})});toast(b.dataset.status==='ACTIVE'?'已启用':'已禁用')}if(b.dataset.act==='unbind'){if(!confirm('确认解绑 '+key+' 的设备？'))return;await api('/admin/api/licenses/'+encodeURIComponent(key)+'/unbind',{method:'POST'});toast('设备已解绑')}await load()}catch(err){toast(err.message,true)}};
+  if(token())load();
+</script>
+</body>
+</html>
