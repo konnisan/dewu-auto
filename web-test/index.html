@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dewu Auto Server Test</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0f172a, #1e293b 55%, #0f766e);
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .card {
+      width: min(92vw, 720px);
+      padding: 44px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 24px;
+      background: rgba(15,23,42,.78);
+      box-shadow: 0 28px 80px rgba(0,0,0,.35);
+      backdrop-filter: blur(14px);
+    }
+    .badge {
+      display: inline-block;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(45,212,191,.14);
+      border: 1px solid rgba(45,212,191,.35);
+      color: #5eead4;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    h1 { margin: 20px 0 10px; font-size: clamp(32px, 6vw, 54px); }
+    p { margin: 0; color: #94a3b8; font-size: 17px; line-height: 1.8; }
+    .status {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 32px;
+    }
+    .item {
+      padding: 18px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .item strong { display: block; color: #f8fafc; margin-bottom: 6px; }
+    .item span { color: #94a3b8; font-size: 13px; }
+    .footer {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,.1);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: #64748b;
+      font-size: 13px;
+    }
+    @media (max-width: 640px) {
+      .card { padding: 28px; }
+      .status { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <span class="badge">PUBLIC ACCESS TEST</span>
+    <h1>服务器已在线</h1>
+    <p>
+      如果你能通过公网 IP 看到这个页面，说明阿里云 ECS、安全组 80 端口以及 Nginx 静态资源访问链路均已打通。
+    </p>
+
+    <section class="status">
+      <div class="item">
+        <strong>Alibaba Cloud ECS</strong>
+        <span>Ubuntu 22.04</span>
+      </div>
+      <div class="item">
+        <strong>Nginx</strong>
+        <span>Static Web Test</span>
+      </div>
+      <div class="item">
+        <strong id="clock">--:--:--</strong>
+        <span>Browser Local Time</span>
+      </div>
+    </section>
+
+    <div class="footer">
+      <span>Dewu Auto · Web Test</span>
+      <span id="loaded">Page loaded successfully</span>
+    </div>
+  </main>
+
+  <script>
+    const clock = document.getElementById('clock');
+    const tick = () => clock.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    tick();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>
