@@ -18,6 +18,9 @@ spring:
       mode: always
       schema-locations: classpath:schema.sql
 
+license:
+  admin-token: ${LICENSE_ADMIN_TOKEN:}
+
 logging:
   file:
     name: ${LICENSE_LOG_FILE:/data/dewu-license/logs/app.log}
