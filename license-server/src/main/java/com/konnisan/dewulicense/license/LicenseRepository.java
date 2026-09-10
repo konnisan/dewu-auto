@@ -1,5 +1,6 @@
 package com.konnisan.dewulicense.license;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -112,6 +113,65 @@ public class LicenseRepository {
 
     public void deleteSession(String sessionToken) {
         jdbc.update("DELETE FROM license_sessions WHERE session_token = ?", sessionToken);
+    }
+
+    public List<Map<String, Object>> listLicenses() {
+        return jdbc.queryForList(
+            """
+            SELECT k.card_key AS cardKey,
+                   k.status AS status,
+                   k.bound_device_id AS boundDeviceId,
+                   k.expires_at AS expiresAt,
+                   k.created_at AS createdAt,
+                   k.updated_at AS updatedAt,
+                   (SELECT MAX(s.last_heartbeat_at)
+                      FROM license_sessions s
+                     WHERE s.card_key = k.card_key) AS lastHeartbeatAt,
+                   (SELECT COUNT(*)
+                      FROM license_sessions s
+                     WHERE s.card_key = k.card_key) AS sessionCount
+            FROM license_keys k
+            ORDER BY k.created_at DESC, k.id DESC
+            """
+        );
+    }
+
+    public boolean createLicense(String cardKey, String expiresAt) {
+        try {
+            return jdbc.update(
+                """
+                INSERT INTO license_keys(card_key, status, bound_device_id, expires_at, created_at, updated_at)
+                VALUES (?, 'ACTIVE', NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                cardKey,
+                expiresAt
+            ) == 1;
+        } catch (DataAccessException ex) {
+            return false;
+        }
+    }
+
+    public boolean updateStatus(String cardKey, String status) {
+        int updated = jdbc.update(
+            "UPDATE license_keys SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE card_key = ?",
+            status,
+            cardKey
+        );
+        if (updated == 1 && "DISABLED".equals(status)) {
+            jdbc.update("DELETE FROM license_sessions WHERE card_key = ?", cardKey);
+        }
+        return updated == 1;
+    }
+
+    public boolean unbindDevice(String cardKey) {
+        int updated = jdbc.update(
+            "UPDATE license_keys SET bound_device_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE card_key = ?",
+            cardKey
+        );
+        if (updated == 1) {
+            jdbc.update("DELETE FROM license_sessions WHERE card_key = ?", cardKey);
+        }
+        return updated == 1;
     }
 
     public Map<String, Object> healthSnapshot() {
