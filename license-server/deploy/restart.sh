@@ -2,6 +2,16 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/data/dewu-license}"
+ENV_FILE="${ENV_FILE:-$APP_DIR/license.env}"
+
+if [[ -f "$ENV_FILE" ]]; then
+  echo "Loading environment: $ENV_FILE"
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
 JAR_FILE="${JAR_FILE:-$APP_DIR/app.jar}"
 PID_FILE="${PID_FILE:-$APP_DIR/app.pid}"
 LOG_DIR="${LOG_DIR:-$APP_DIR/logs}"
@@ -48,6 +58,11 @@ if kill -0 "$NEW_PID" 2>/dev/null; then
   echo "PORT: $PORT (127.0.0.1 only)"
   echo "DB: $DB_PATH"
   echo "LOG: $LOG_FILE"
+  if [[ -n "${LICENSE_ADMIN_TOKEN:-}" ]]; then
+    echo "ADMIN: enabled"
+  else
+    echo "ADMIN: disabled (set LICENSE_ADMIN_TOKEN in $ENV_FILE)"
+  fi
 else
   echo "Startup failed. Check: $LOG_FILE"
   exit 1
