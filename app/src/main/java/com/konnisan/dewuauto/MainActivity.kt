@@ -24,10 +24,12 @@ import com.konnisan.dewuauto.automation.DewuSelectors
 import com.konnisan.dewuauto.automation.PreviewTaskResult
 import com.konnisan.dewuauto.config.AutomationConfig
 import com.konnisan.dewuauto.config.AutomationPrefs
+import com.konnisan.dewuauto.license.LicenseManager
 import com.konnisan.dewuauto.util.ScreenInfo
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: AutomationPrefs
+    private lateinit var licenseManager: LicenseManager
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private lateinit var tvRuntimeStatus: TextView
@@ -45,6 +47,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var advancedChevron: ImageView
     private lateinit var spCategory: Spinner
     private lateinit var spSortMode: Spinner
+    private lateinit var btnStart: Button
+
+    private var isLicenseVerifying = false
+    private var licenseStatusOverride: String? = null
 
     private val uiTicker = object : Runnable {
         override fun run() {
@@ -57,6 +63,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = AutomationPrefs(this)
+        licenseManager = LicenseManager(applicationContext)
 
         bindViews()
         setupSpinners()
@@ -75,6 +82,14 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onDestroy() {
+        if (!isChangingConfigurations) {
+            DewuAccessibilityService.instance?.stopAutomation()
+            licenseManager.shutdown()
+        }
+        super.onDestroy()
+    }
+
     private fun bindViews() {
         tvRuntimeStatus = findViewById(R.id.tvRuntimeStatus)
         tvAccessibility = findViewById(R.id.tvAccessibility)
@@ -91,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         advancedChevron = findViewById(R.id.ivAdvancedChevron)
         spCategory = findViewById(R.id.spCategory)
         spSortMode = findViewById(R.id.spSortMode)
+        btnStart = findViewById(R.id.btnStart)
     }
 
     private fun setupActions() {
@@ -106,11 +122,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOpenDewu).setOnClickListener {
             if (!DewuLauncher.launch(this)) toast("未检测到得物")
         }
-        findViewById<Button>(R.id.btnStart).setOnClickListener {
+        btnStart.setOnClickListener {
             startPreview()
         }
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             DewuAccessibilityService.instance?.stopAutomation()
+            licenseManager.stopHeartbeat()
+            licenseStatusOverride = "已停止 · 下次开始会重新验证卡密"
             toast("已停止筛选预演")
         }
     }
@@ -129,30 +147,81 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startPreview() {
+        if (isLicenseVerifying) return
+
+        val config = readConfig().normalized()
+        if (config.cardKey.isBlank()) {
+            licenseStatusOverride = "卡密未验证 · 请先输入卡密"
+            toast("请输入卡密")
+            return
+        }
+
         if (!AccessibilityStatus.isEnabled(this)) {
             toast("请先开启“得物任务筛选服务”无障碍权限")
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
 
-        val service = DewuAccessibilityService.instance
-        if (service == null) {
+        if (DewuAccessibilityService.instance == null) {
             toast("无障碍服务已开启但尚未连接，请关闭后重新开启一次")
             return
         }
 
-        val config = readConfig().normalized()
         prefs.save(config)
         updateAdvancedSummary(config)
-        service.startAutomation(config)
+        isLicenseVerifying = true
+        btnStart.isEnabled = false
+        licenseStatusOverride = "卡密验证中…"
+        refreshStatus()
 
+        licenseManager.verify(config.cardKey) { result ->
+            isLicenseVerifying = false
+            btnStart.isEnabled = true
+
+            result.fold(
+                onSuccess = {
+                    licenseStatusOverride = null
+                    startVerifiedPreview(config)
+                },
+                onFailure = { error ->
+                    val message = error.message?.takeIf { it.isNotBlank() } ?: "卡密验证失败"
+                    licenseStatusOverride = "卡密验证失败 · $message"
+                    toast(message)
+                },
+            )
+        }
+    }
+
+    private fun startVerifiedPreview(config: AutomationConfig) {
+        if (!AccessibilityStatus.isEnabled(this)) {
+            licenseStatusOverride = "卡密已验证 · 无障碍权限未开启"
+            toast("卡密已验证，但无障碍权限已关闭")
+            return
+        }
+
+        val service = DewuAccessibilityService.instance
+        if (service == null) {
+            licenseStatusOverride = "卡密已验证 · 无障碍服务未连接"
+            toast("卡密已验证，但无障碍服务未连接")
+            return
+        }
+
+        service.startAutomation(config)
         if (!DewuLauncher.launch(this)) {
             service.stopAutomation()
+            licenseManager.stopHeartbeat()
+            licenseStatusOverride = "卡密已验证 · 未检测到得物"
             toast("未检测到得物，请确认已安装")
             return
         }
 
-        toast("筛选预演已启动，不会执行报名")
+        licenseManager.startHeartbeat { reason ->
+            DewuAccessibilityService.instance?.stopAutomation()
+            licenseStatusOverride = "授权已失效 · $reason"
+            toast("卡密授权失效：$reason")
+        }
+
+        toast("卡密验证成功，筛选预演已启动")
     }
 
     private fun readConfig(): AutomationConfig = AutomationConfig(
@@ -204,9 +273,14 @@ class MainActivity : AppCompatActivity() {
         val screen = ScreenInfo.from(this)
         tvScreen.text = "${screen.widthPx} × ${screen.heightPx} · 不会点击报名或申请入驻"
 
+        licenseStatusOverride?.let {
+            tvRuntimeStatus.text = it
+            return
+        }
+
         val runtime = DewuAccessibilityService.instance?.snapshot()
         if (runtime == null) {
-            tvRuntimeStatus.text = "等待开始"
+            tvRuntimeStatus.text = "等待开始 · 需要有效卡密"
             return
         }
 
