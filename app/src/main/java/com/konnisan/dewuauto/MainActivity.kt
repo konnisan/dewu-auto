@@ -3,6 +3,7 @@ package com.konnisan.dewuauto
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -27,11 +28,13 @@ import com.konnisan.dewuauto.automation.PreviewTaskResult
 import com.konnisan.dewuauto.config.AutomationConfig
 import com.konnisan.dewuauto.config.AutomationPrefs
 import com.konnisan.dewuauto.license.LicenseManager
+import com.konnisan.dewuauto.license.PurchaseManager
 import com.konnisan.dewuauto.util.ScreenInfo
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: AutomationPrefs
     private lateinit var licenseManager: LicenseManager
+    private lateinit var purchaseManager: PurchaseManager
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private lateinit var tvRuntimeStatus: TextView
@@ -54,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private var lastClearedTerminalRunId = ""
     private var lastRenderedResults: List<PreviewTaskResult> = emptyList()
     private var isLicenseVerifying = false
+    private var isPurchasePending = false
     private var licenseStatusOverride: String? = null
 
     private val uiTicker = object : Runnable {
@@ -68,6 +72,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         prefs = AutomationPrefs(this)
         licenseManager = LicenseManager(applicationContext)
+        purchaseManager = PurchaseManager(applicationContext)
 
         bindViews()
         setupSpinners()
@@ -92,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         if (!isChangingConfigurations) {
             DewuAccessibilityService.instance?.stopAutomation()
             licenseManager.shutdown()
+            purchaseManager.shutdown()
         }
         super.onDestroy()
     }
@@ -158,12 +164,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAutomation() {
-        if (isLicenseVerifying) return
+        if (isLicenseVerifying || isPurchasePending) return
 
         val config = readConfig().normalized()
         if (config.cardKey.isBlank()) {
-            licenseStatusOverride = "卡密未验证 · 请先输入卡密"
-            toast("请输入卡密")
+            beginPurchase()
             return
         }
         if (config.sizeSpec.isBlank()) {
@@ -197,6 +202,59 @@ class MainActivity : AppCompatActivity() {
                 onFailure = { error ->
                     val message = error.message?.takeIf { it.isNotBlank() } ?: "卡密验证失败"
                     licenseStatusOverride = "卡密验证失败 · $message"
+                    toast(message)
+                },
+            )
+        }
+    }
+
+    private fun beginPurchase() {
+        if (isPurchasePending) return
+        isPurchasePending = true
+        btnStart.isEnabled = false
+        licenseStatusOverride = "正在创建 30 天测试订单…"
+        refreshStatus()
+
+        purchaseManager.createOrder(planDays = 30) { result ->
+            result.fold(
+                onSuccess = { order ->
+                    licenseStatusOverride = "等待测试支付 · ${order.orderNo}"
+                    val opened = runCatching {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(order.payUrl)))
+                    }.isSuccess
+                    if (!opened) {
+                        isPurchasePending = false
+                        btnStart.isEnabled = true
+                        licenseStatusOverride = "订单已创建 · 无法打开支付网页"
+                        toast("无法打开测试支付网页")
+                        return@fold
+                    }
+
+                    purchaseManager.startPolling(
+                        orderNo = order.orderNo,
+                        clientToken = order.clientToken,
+                        onPaid = { cardKey ->
+                            isPurchasePending = false
+                            btnStart.isEnabled = true
+                            setText(R.id.etCardKey, cardKey)
+                            prefs.save(readConfig().normalized())
+                            licenseStatusOverride = "支付成功 · 卡密已自动填入"
+                            toast("支付成功，卡密已自动填入；再次点击开始即可验证并运行")
+                        },
+                        onFailure = { reason ->
+                            isPurchasePending = false
+                            btnStart.isEnabled = true
+                            licenseStatusOverride = "订单失败 · $reason"
+                            toast(reason)
+                        },
+                    )
+                    toast("已创建 30 天测试订单，请在网页完成模拟支付")
+                },
+                onFailure = { error ->
+                    isPurchasePending = false
+                    btnStart.isEnabled = true
+                    val message = error.message?.takeIf { it.isNotBlank() } ?: "创建订单失败"
+                    licenseStatusOverride = "创建订单失败 · $message"
                     toast(message)
                 },
             )
