@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.util.Log
 import com.konnisan.dewuauto.BuildConfig
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -13,7 +12,6 @@ import java.util.concurrent.Executors
 
 class LicenseManager(private val context: Context) {
     companion object {
-        private const val TAG = "DewuAuto-License"
         private const val HEARTBEAT_INTERVAL_MS = 60_000L
     }
 
@@ -28,12 +26,7 @@ class LicenseManager(private val context: Context) {
     fun verify(cardKey: String, callback: (Result<Unit>) -> Unit) {
         val baseUrl = BuildConfig.LICENSE_API_BASE_URL.trim().trimEnd('/')
         if (baseUrl.isBlank()) {
-            if (BuildConfig.DEBUG) {
-                Log.w(TAG, "LICENSE_API_BASE_URL is empty; Debug build uses local development verification.")
-                callback(Result.success(Unit))
-            } else {
-                callback(Result.failure(IllegalStateException("Release 构建必须配置卡密服务地址")))
-            }
+            callback(Result.failure(IllegalStateException("未配置卡密服务地址")))
             return
         }
 
@@ -42,6 +35,7 @@ class LicenseManager(private val context: Context) {
             return
         }
 
+        sessionToken = null
         executor.execute {
             val result = runCatching {
                 val response = postJson(
@@ -54,6 +48,7 @@ class LicenseManager(private val context: Context) {
                     error(response.optString("message", "卡密验证失败"))
                 }
                 sessionToken = response.optString("sessionToken").takeIf { it.isNotBlank() }
+                    ?: error("服务端未返回卡密会话")
             }
             mainHandler.post { callback(result) }
         }
@@ -62,12 +57,21 @@ class LicenseManager(private val context: Context) {
     fun startHeartbeat(onFailure: (String) -> Unit) {
         stopHeartbeat()
         val baseUrl = BuildConfig.LICENSE_API_BASE_URL.trim().trimEnd('/')
-        if (baseUrl.isBlank() || BuildConfig.DEBUG && sessionToken == null) return
+        if (baseUrl.isBlank()) {
+            onFailure("未配置卡密服务地址")
+            return
+        }
+
+        val token = sessionToken
+        if (token.isNullOrBlank()) {
+            onFailure("卡密会话不存在")
+            return
+        }
 
         heartbeatRunnable = object : Runnable {
             override fun run() {
-                val token = sessionToken
-                if (token.isNullOrBlank()) {
+                val currentToken = sessionToken
+                if (currentToken.isNullOrBlank()) {
                     onFailure("卡密会话不存在")
                     return
                 }
@@ -76,7 +80,7 @@ class LicenseManager(private val context: Context) {
                         val response = postJson(
                             "$baseUrl/heartbeat",
                             JSONObject()
-                                .put("sessionToken", token)
+                                .put("sessionToken", currentToken)
                                 .put("deviceId", deviceId),
                         )
                         if (!response.optBoolean("ok", false)) {
@@ -84,8 +88,13 @@ class LicenseManager(private val context: Context) {
                         }
                     }
                     mainHandler.post {
-                        result.exceptionOrNull()?.let { onFailure(it.message ?: "心跳失败") }
-                        if (result.isSuccess) mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+                        val failure = result.exceptionOrNull()
+                        if (failure != null) {
+                            sessionToken = null
+                            onFailure(failure.message ?: "心跳失败")
+                        } else {
+                            mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+                        }
                     }
                 }
             }
@@ -99,6 +108,7 @@ class LicenseManager(private val context: Context) {
 
     fun shutdown() {
         stopHeartbeat()
+        sessionToken = null
         executor.shutdownNow()
     }
 
@@ -109,6 +119,7 @@ class LicenseManager(private val context: Context) {
             readTimeout = 8_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("Accept", "application/json")
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -116,6 +127,7 @@ class LicenseManager(private val context: Context) {
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (code !in 200..299) error("HTTP $code: $text")
+            if (text.isBlank()) error("卡密服务返回空响应")
             return JSONObject(text)
         } finally {
             connection.disconnect()
