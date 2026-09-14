@@ -36,7 +36,7 @@ public class OrderController {
         body.put("planDays", order.planDays());
         body.put("amountFen", order.amountFen());
         body.put("expiresAt", order.expiresAt());
-        body.put("payPath", "buy/?orderNo=" + order.orderNo() + "&token=" + order.clientToken());
+        body.put("payPath", "buy/index.html?orderNo=" + order.orderNo() + "&token=" + order.clientToken());
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
