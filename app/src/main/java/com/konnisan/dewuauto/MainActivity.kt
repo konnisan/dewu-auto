@@ -26,10 +26,12 @@ import com.konnisan.dewuauto.automation.DewuSelectors
 import com.konnisan.dewuauto.automation.PreviewTaskResult
 import com.konnisan.dewuauto.config.AutomationConfig
 import com.konnisan.dewuauto.config.AutomationPrefs
+import com.konnisan.dewuauto.license.LicenseManager
 import com.konnisan.dewuauto.util.ScreenInfo
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: AutomationPrefs
+    private lateinit var licenseManager: LicenseManager
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private lateinit var tvRuntimeStatus: TextView
@@ -46,9 +48,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spCategory: Spinner
     private lateinit var spSortMode: Spinner
     private lateinit var btnFinalConfirmationMode: MaterialButton
+    private lateinit var btnStart: Button
+
     private var finalConfirmationArmed = false
     private var lastClearedTerminalRunId = ""
     private var lastRenderedResults: List<PreviewTaskResult> = emptyList()
+    private var isLicenseVerifying = false
+    private var licenseStatusOverride: String? = null
 
     private val uiTicker = object : Runnable {
         override fun run() {
@@ -61,6 +67,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = AutomationPrefs(this)
+        licenseManager = LicenseManager(applicationContext)
 
         bindViews()
         setupSpinners()
@@ -81,6 +88,14 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onDestroy() {
+        if (!isChangingConfigurations) {
+            DewuAccessibilityService.instance?.stopAutomation()
+            licenseManager.shutdown()
+        }
+        super.onDestroy()
+    }
+
     private fun bindViews() {
         tvRuntimeStatus = findViewById(R.id.tvRuntimeStatus)
         tvAccessibility = findViewById(R.id.tvAccessibility)
@@ -96,6 +111,7 @@ class MainActivity : AppCompatActivity() {
         spCategory = findViewById(R.id.spCategory)
         spSortMode = findViewById(R.id.spSortMode)
         btnFinalConfirmationMode = findViewById(R.id.btnFinalConfirmationMode)
+        btnStart = findViewById(R.id.btnStart)
     }
 
     private fun setupActions() {
@@ -105,12 +121,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOpenDewu).setOnClickListener {
             if (!DewuLauncher.launch(this)) toast("未检测到得物")
         }
-        findViewById<Button>(R.id.btnStart).setOnClickListener {
+        btnStart.setOnClickListener {
             startAutomation()
         }
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             DewuAccessibilityService.instance?.stopAutomation()
+            licenseManager.stopHeartbeat()
             finalConfirmationArmed = false
+            licenseStatusOverride = "已停止 · 下次开始会重新验证卡密"
             renderFinalConfirmationButton(armed = false, locked = false)
             toast("已停止自动报名任务")
         }
@@ -140,40 +158,91 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAutomation() {
+        if (isLicenseVerifying) return
+
+        val config = readConfig().normalized()
+        if (config.cardKey.isBlank()) {
+            licenseStatusOverride = "卡密未验证 · 请先输入卡密"
+            toast("请输入卡密")
+            return
+        }
+        if (config.sizeSpec.isBlank()) {
+            toast("请填写样品规格，避免报名时误选")
+            return
+        }
         if (!AccessibilityStatus.isEnabled(this)) {
             toast("请先开启“得物自动报名服务”无障碍权限")
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
-
-        val service = DewuAccessibilityService.instance
-        if (service == null) {
+        if (DewuAccessibilityService.instance == null) {
             toast("无障碍服务已开启但尚未连接，请关闭后重新开启一次")
             return
         }
 
-        val config = readConfig().normalized()
-        if (config.sizeSpec.isBlank()) {
-            toast("请填写样品规格，避免报名时误选")
+        prefs.save(config)
+        isLicenseVerifying = true
+        btnStart.isEnabled = false
+        licenseStatusOverride = "卡密验证中…"
+        refreshStatus()
+
+        licenseManager.verify(config.cardKey) { result ->
+            isLicenseVerifying = false
+            btnStart.isEnabled = true
+            result.fold(
+                onSuccess = {
+                    licenseStatusOverride = null
+                    startVerifiedAutomation(config)
+                },
+                onFailure = { error ->
+                    val message = error.message?.takeIf { it.isNotBlank() } ?: "卡密验证失败"
+                    licenseStatusOverride = "卡密验证失败 · $message"
+                    toast(message)
+                },
+            )
+        }
+    }
+
+    private fun startVerifiedAutomation(config: AutomationConfig) {
+        if (!AccessibilityStatus.isEnabled(this)) {
+            licenseStatusOverride = "卡密已验证 · 无障碍权限未开启"
+            toast("卡密已验证，但无障碍权限已关闭")
             return
         }
-        prefs.save(config)
+
+        val service = DewuAccessibilityService.instance
+        if (service == null) {
+            licenseStatusOverride = "卡密已验证 · 无障碍服务未连接"
+            toast("卡密已验证，但无障碍服务未连接")
+            return
+        }
+
         service.startAutomation(config)
         renderFinalConfirmationButton(config.finalConfirmationEnabled, locked = true)
 
         if (!DewuLauncher.launch(this)) {
             service.stopAutomation()
+            licenseManager.stopHeartbeat()
             finalConfirmationArmed = false
+            licenseStatusOverride = "卡密已验证 · 未检测到得物"
             renderFinalConfirmationButton(armed = false, locked = false)
             toast("未检测到得物，请确认已安装")
             return
         }
 
+        licenseManager.startHeartbeat { reason ->
+            DewuAccessibilityService.instance?.stopAutomation()
+            finalConfirmationArmed = false
+            licenseStatusOverride = "授权已失效 · $reason"
+            renderFinalConfirmationButton(armed = false, locked = false)
+            toast("卡密授权失效：$reason")
+        }
+
         toast(
             if (config.finalConfirmationEnabled) {
-                "真实报名已启动；达到目标次数后停止"
+                "卡密验证成功，真实报名已启动；达到目标次数后停止"
             } else {
-                "多任务演练已启动；最终弹窗会自动取消"
+                "卡密验证成功，多任务演练已启动；最终弹窗会自动取消"
             },
         )
     }
@@ -215,9 +284,14 @@ class MainActivity : AppCompatActivity() {
         val screen = ScreenInfo.from(this)
         tvScreen.text = "${screen.widthPx} × ${screen.heightPx} · 自动报名 V1.4 · 默认演练"
 
+        licenseStatusOverride?.let {
+            tvRuntimeStatus.text = it
+            return
+        }
+
         val runtime = DewuAccessibilityService.instance?.snapshot()
         if (runtime == null) {
-            tvRuntimeStatus.text = "等待开始"
+            tvRuntimeStatus.text = "等待开始 · 需要有效卡密"
             return
         }
 
