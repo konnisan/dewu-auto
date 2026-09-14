@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val licenseApiBaseUrl = providers.gradleProperty("LICENSE_API_BASE_URL")
+    .orElse(providers.environmentVariable("LICENSE_API_BASE_URL"))
+    .orElse("")
+
 android {
     namespace = "com.konnisan.dewuauto"
     compileSdk = 36
@@ -14,7 +18,11 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        buildConfigField("String", "LICENSE_API_BASE_URL", "\"\"")
+        buildConfigField(
+            "String",
+            "LICENSE_API_BASE_URL",
+            "\"${licenseApiBaseUrl.get()}\"",
+        )
     }
 
     buildTypes {
