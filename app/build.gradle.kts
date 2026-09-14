@@ -5,7 +5,7 @@ plugins {
 
 val licenseApiBaseUrl = providers.gradleProperty("LICENSE_API_BASE_URL")
     .orElse(providers.environmentVariable("LICENSE_API_BASE_URL"))
-    .orElse("")
+    .orElse("http://101.37.18.75/api/license")
 
 android {
     namespace = "com.konnisan.dewuauto"
@@ -15,8 +15,8 @@ android {
         applicationId = "com.konnisan.dewuauto"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4.0-test"
+        versionCode = 6
+        versionName = "1.4.1-purchase-test"
 
         buildConfigField(
             "String",
