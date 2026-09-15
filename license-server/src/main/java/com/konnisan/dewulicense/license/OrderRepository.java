@@ -4,6 +4,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Repository
@@ -51,6 +52,34 @@ public class OrderRepository {
         }
     }
 
+    public void ensureOrderItems(String orderNo, int quantity) {
+        for (int itemNo = 1; itemNo <= quantity; itemNo++) {
+            jdbc.update(
+                """
+                INSERT OR IGNORE INTO purchase_order_items(order_no, item_no, card_key, created_at)
+                VALUES (?, ?, NULL, CURRENT_TIMESTAMP)
+                """,
+                orderNo,
+                itemNo
+            );
+        }
+    }
+
+    public boolean assignCardToItem(String orderNo, int itemNo, String cardKey) {
+        return jdbc.update(
+            """
+            UPDATE purchase_order_items
+               SET card_key = ?
+             WHERE order_no = ?
+               AND item_no = ?
+               AND card_key IS NULL
+            """,
+            cardKey,
+            orderNo,
+            itemNo
+        ) == 1;
+    }
+
     public OrderRow find(String orderNo, String clientToken) {
         List<OrderRow> rows = jdbc.query(
             baseSelect() + " WHERE o.order_no = ? AND o.client_token = ? LIMIT 1",
@@ -61,12 +90,54 @@ public class OrderRepository {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    public List<OrderRow> findPaidByPhone(String phone) {
+    public List<OrderRow> findByPhone(String phone) {
         return jdbc.query(
-            baseSelect() + " WHERE o.device_id = ? AND o.status = 'PAID' ORDER BY o.paid_at DESC, o.id DESC",
+            baseSelect() + " WHERE o.device_id = ? ORDER BY o.created_at DESC, o.id DESC",
             (rs, rowNum) -> mapRow(rs),
             phone
         );
+    }
+
+    public List<OrderCardRow> findCards(String orderNo) {
+        List<OrderCardRow> cards = jdbc.query(
+            """
+            SELECT i.item_no,
+                   i.card_key,
+                   k.expires_at AS license_expires_at
+              FROM purchase_order_items i
+              JOIN license_keys k ON k.card_key = i.card_key
+             WHERE i.order_no = ?
+               AND i.card_key IS NOT NULL
+             ORDER BY i.item_no ASC
+            """,
+            (rs, rowNum) -> new OrderCardRow(
+                rs.getInt("item_no"),
+                rs.getString("card_key"),
+                rs.getString("license_expires_at")
+            ),
+            orderNo
+        );
+        if (!cards.isEmpty()) return cards;
+
+        List<OrderCardRow> legacy = jdbc.query(
+            """
+            SELECT 1 AS item_no,
+                   o.card_key,
+                   k.expires_at AS license_expires_at
+              FROM purchase_orders o
+              JOIN license_keys k ON k.card_key = o.card_key
+             WHERE o.order_no = ?
+               AND o.card_key IS NOT NULL
+             LIMIT 1
+            """,
+            (rs, rowNum) -> new OrderCardRow(
+                rs.getInt("item_no"),
+                rs.getString("card_key"),
+                rs.getString("license_expires_at")
+            ),
+            orderNo
+        );
+        return legacy.isEmpty() ? new ArrayList<>() : legacy;
     }
 
     public boolean markExpiredIfNeeded(String orderNo) {
@@ -82,7 +153,7 @@ public class OrderRepository {
         ) == 1;
     }
 
-    public boolean markPaid(String orderNo, String clientToken, String cardKey) {
+    public boolean markPaid(String orderNo, String clientToken, String firstCardKey) {
         return jdbc.update(
             """
             UPDATE purchase_orders
@@ -93,7 +164,7 @@ public class OrderRepository {
                AND client_token = ?
                AND status = 'CREATED'
             """,
-            cardKey,
+            firstCardKey,
             orderNo,
             clientToken
         ) == 1;
@@ -112,9 +183,12 @@ public class OrderRepository {
                    o.created_at,
                    o.paid_at,
                    o.expires_at,
-                   k.expires_at AS license_expires_at
+                   CASE
+                       WHEN EXISTS(SELECT 1 FROM purchase_order_items i WHERE i.order_no = o.order_no)
+                       THEN (SELECT COUNT(*) FROM purchase_order_items i WHERE i.order_no = o.order_no)
+                       ELSE 1
+                   END AS quantity
             FROM purchase_orders o
-            LEFT JOIN license_keys k ON k.card_key = o.card_key
             """;
     }
 
@@ -125,12 +199,12 @@ public class OrderRepository {
             rs.getString("device_id"),
             rs.getInt("plan_days"),
             rs.getInt("amount_fen"),
+            rs.getInt("quantity"),
             rs.getString("status"),
             rs.getString("card_key"),
             rs.getString("created_at"),
             rs.getString("paid_at"),
-            rs.getString("expires_at"),
-            rs.getString("license_expires_at")
+            rs.getString("expires_at")
         );
     }
 
@@ -140,11 +214,17 @@ public class OrderRepository {
         String phone,
         int planDays,
         int amountFen,
+        int quantity,
         String status,
         String cardKey,
         String createdAt,
         String paidAt,
-        String orderExpiresAt,
+        String orderExpiresAt
+    ) {}
+
+    public record OrderCardRow(
+        int itemNo,
+        String cardKey,
         String licenseExpiresAt
     ) {}
 }
