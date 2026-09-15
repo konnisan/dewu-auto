@@ -28,13 +28,11 @@ import com.konnisan.dewuauto.automation.PreviewTaskResult
 import com.konnisan.dewuauto.config.AutomationConfig
 import com.konnisan.dewuauto.config.AutomationPrefs
 import com.konnisan.dewuauto.license.LicenseManager
-import com.konnisan.dewuauto.license.PurchaseManager
 import com.konnisan.dewuauto.util.ScreenInfo
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: AutomationPrefs
     private lateinit var licenseManager: LicenseManager
-    private lateinit var purchaseManager: PurchaseManager
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private lateinit var tvRuntimeStatus: TextView
@@ -57,7 +55,6 @@ class MainActivity : AppCompatActivity() {
     private var lastClearedTerminalRunId = ""
     private var lastRenderedResults: List<PreviewTaskResult> = emptyList()
     private var isLicenseVerifying = false
-    private var isPurchasePending = false
     private var licenseStatusOverride: String? = null
 
     private val uiTicker = object : Runnable {
@@ -72,11 +69,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         prefs = AutomationPrefs(this)
         licenseManager = LicenseManager(applicationContext)
-        purchaseManager = PurchaseManager(applicationContext)
 
         bindViews()
         setupSpinners()
         bindConfig(prefs.load())
+        setupLicensePurchaseLink()
         setupActions()
         lastClearedTerminalRunId = DewuAccessibilityService.instance?.snapshot()?.runId.orEmpty()
         renderFinalConfirmationButton(finalConfirmationArmed, locked = false)
@@ -97,7 +94,6 @@ class MainActivity : AppCompatActivity() {
         if (!isChangingConfigurations) {
             DewuAccessibilityService.instance?.stopAutomation()
             licenseManager.shutdown()
-            purchaseManager.shutdown()
         }
         super.onDestroy()
     }
@@ -118,6 +114,24 @@ class MainActivity : AppCompatActivity() {
         spSortMode = findViewById(R.id.spSortMode)
         btnFinalConfirmationMode = findViewById(R.id.btnFinalConfirmationMode)
         btnStart = findViewById(R.id.btnStart)
+    }
+
+    private fun setupLicensePurchaseLink() {
+        val cardInput = findViewById<EditText>(R.id.etCardKey)
+        val parent = cardInput.parent as? LinearLayout ?: return
+        val url = licensePurchaseUrl()
+        val link = TextView(this).apply {
+            text = if (url.isBlank()) "购买卡密：服务地址未配置" else "购买卡密：$url"
+            setTextColor(Color.parseColor("#067F85"))
+            textSize = 12f
+            setPadding(0, dp(10), 0, 0)
+            isClickable = url.isNotBlank()
+            isFocusable = url.isNotBlank()
+            setOnClickListener {
+                openLicensePurchasePage()
+            }
+        }
+        parent.addView(link)
     }
 
     private fun setupActions() {
@@ -164,11 +178,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAutomation() {
-        if (isLicenseVerifying || isPurchasePending) return
+        if (isLicenseVerifying) return
 
         val config = readConfig().normalized()
         if (config.cardKey.isBlank()) {
-            beginPurchase()
+            licenseStatusOverride = "卡密未验证 · 请先输入卡密"
+            toast("请输入卡密；没有卡密可点击授权区域的购买网址")
             return
         }
         if (config.sizeSpec.isBlank()) {
@@ -208,57 +223,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun beginPurchase() {
-        if (isPurchasePending) return
-        isPurchasePending = true
-        btnStart.isEnabled = false
-        licenseStatusOverride = "正在创建 30 天测试订单…"
-        refreshStatus()
-
-        purchaseManager.createOrder(planDays = 30) { result ->
-            result.fold(
-                onSuccess = { order ->
-                    licenseStatusOverride = "等待测试支付 · ${order.orderNo}"
-                    val opened = runCatching {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(order.payUrl)))
-                    }.isSuccess
-                    if (!opened) {
-                        isPurchasePending = false
-                        btnStart.isEnabled = true
-                        licenseStatusOverride = "订单已创建 · 无法打开支付网页"
-                        toast("无法打开测试支付网页")
-                        return@fold
-                    }
-
-                    purchaseManager.startPolling(
-                        orderNo = order.orderNo,
-                        clientToken = order.clientToken,
-                        onPaid = { cardKey ->
-                            isPurchasePending = false
-                            btnStart.isEnabled = true
-                            setText(R.id.etCardKey, cardKey)
-                            prefs.save(readConfig().normalized())
-                            licenseStatusOverride = "支付成功 · 卡密已自动填入"
-                            toast("支付成功，卡密已自动填入；再次点击开始即可验证并运行")
-                        },
-                        onFailure = { reason ->
-                            isPurchasePending = false
-                            btnStart.isEnabled = true
-                            licenseStatusOverride = "订单失败 · $reason"
-                            toast(reason)
-                        },
-                    )
-                    toast("已创建 30 天测试订单，请在网页完成模拟支付")
-                },
-                onFailure = { error ->
-                    isPurchasePending = false
-                    btnStart.isEnabled = true
-                    val message = error.message?.takeIf { it.isNotBlank() } ?: "创建订单失败"
-                    licenseStatusOverride = "创建订单失败 · $message"
-                    toast(message)
-                },
-            )
+    private fun openLicensePurchasePage() {
+        val url = licensePurchaseUrl()
+        if (url.isBlank()) {
+            toast("未配置卡密购买地址")
+            return
         }
+        val opened = runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.isSuccess
+        if (!opened) toast("无法打开卡密购买网页：$url")
+    }
+
+    private fun licensePurchaseUrl(): String {
+        val baseUrl = BuildConfig.LICENSE_API_BASE_URL.trim().trimEnd('/')
+        return if (baseUrl.isBlank()) "" else "$baseUrl/buy/index.html"
     }
 
     private fun startVerifiedAutomation(config: AutomationConfig) {
@@ -507,6 +486,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
