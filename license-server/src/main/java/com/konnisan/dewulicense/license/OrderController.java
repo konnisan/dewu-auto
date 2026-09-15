@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -24,9 +25,9 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(@RequestBody(required = false) CreateOrderRequest request) {
-        String deviceId = request == null ? null : request.deviceId();
+        String phone = request == null ? null : request.phone();
         Integer planDays = request == null ? null : request.planDays();
-        OrderService.CreatedOrder order = service.create(deviceId, planDays);
+        OrderService.CreatedOrder order = service.create(phone, planDays);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", true);
@@ -36,8 +37,19 @@ public class OrderController {
         body.put("planDays", order.planDays());
         body.put("amountFen", order.amountFen());
         body.put("expiresAt", order.expiresAt());
-        body.put("payPath", "buy/index.html?orderNo=" + order.orderNo() + "&token=" + order.clientToken());
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    @GetMapping("/query")
+    public Map<String, Object> queryByPhone(@RequestParam("phone") String phone) {
+        List<Map<String, Object>> rows = service.queryPaidByPhone(phone).stream()
+            .map(this::toPublicQueryBody)
+            .toList();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("ok", true);
+        body.put("count", rows.size());
+        body.put("orders", rows);
+        return body;
     }
 
     @GetMapping("/{orderNo}")
@@ -66,13 +78,24 @@ public class OrderController {
         body.put("amountFen", row.amountFen());
         body.put("createdAt", row.createdAt());
         body.put("paidAt", row.paidAt());
-        body.put("expiresAt", row.expiresAt());
+        body.put("orderExpiresAt", row.orderExpiresAt());
         if ("PAID".equals(row.status()) && row.cardKey() != null) {
             body.put("cardKey", row.cardKey());
+            body.put("licenseExpiresAt", row.licenseExpiresAt());
         }
         return body;
     }
 
-    public record CreateOrderRequest(String deviceId, Integer planDays) {}
+    private Map<String, Object> toPublicQueryBody(OrderRepository.OrderRow row) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("orderNo", row.orderNo());
+        body.put("cardKey", row.cardKey());
+        body.put("planDays", row.planDays());
+        body.put("paidAt", row.paidAt());
+        body.put("licenseExpiresAt", row.licenseExpiresAt());
+        return body;
+    }
+
+    public record CreateOrderRequest(String phone, Integer planDays) {}
     public record MockPayRequest(String clientToken) {}
 }
