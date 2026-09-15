@@ -19,6 +19,7 @@ public class OrderService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final DateTimeFormatter SQLITE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter ORDER_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final int MAX_QUANTITY = 50;
     private static final Map<Integer, Integer> PLAN_PRICES = Map.of(
         1, 100,
         7, 300,
@@ -37,13 +38,30 @@ public class OrderService {
     }
 
     public CreatedOrder create(String phone, Integer requestedPlanDays) {
+        return create(phone, requestedPlanDays, 1);
+    }
+
+    @Transactional
+    public CreatedOrder create(String phone, Integer requestedPlanDays, Integer requestedQuantity) {
         String normalizedPhone = normalizePhone(phone);
         requirePhone(normalizedPhone);
 
         int planDays = requestedPlanDays == null ? 30 : requestedPlanDays;
-        Integer amountFen = PLAN_PRICES.get(planDays);
-        if (amountFen == null) {
+        Integer unitAmountFen = PLAN_PRICES.get(planDays);
+        if (unitAmountFen == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的授权套餐");
+        }
+
+        int quantity = requestedQuantity == null ? 1 : requestedQuantity;
+        if (quantity < 1 || quantity > MAX_QUANTITY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "购买数量必须在 1~" + MAX_QUANTITY + " 之间");
+        }
+
+        int amountFen;
+        try {
+            amountFen = Math.multiplyExact(unitAmountFen, quantity);
+        } catch (ArithmeticException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "购买数量超出范围");
         }
 
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
@@ -53,7 +71,17 @@ public class OrderService {
         for (int attempt = 0; attempt < 8; attempt++) {
             String orderNo = generateOrderNo(now);
             if (orders.createOrder(orderNo, clientToken, normalizedPhone, planDays, amountFen, orderExpiresAt)) {
-                return new CreatedOrder(orderNo, clientToken, planDays, amountFen, "CREATED", orderExpiresAt);
+                orders.ensureOrderItems(orderNo, quantity);
+                return new CreatedOrder(
+                    orderNo,
+                    clientToken,
+                    planDays,
+                    quantity,
+                    unitAmountFen,
+                    amountFen,
+                    "CREATED",
+                    orderExpiresAt
+                );
             }
         }
         throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建订单失败，请重试");
@@ -72,10 +100,14 @@ public class OrderService {
         return row;
     }
 
-    public List<OrderRepository.OrderRow> queryPaidByPhone(String phone) {
+    public List<OrderRepository.OrderRow> queryByPhone(String phone) {
         String normalizedPhone = normalizePhone(phone);
         requirePhone(normalizedPhone);
-        return orders.findPaidByPhone(normalizedPhone);
+        return orders.findByPhone(normalizedPhone);
+    }
+
+    public List<OrderRepository.OrderCardRow> cardsForOrder(String orderNo) {
+        return orders.findCards(orderNo);
     }
 
     @Transactional
@@ -86,8 +118,19 @@ public class OrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "当前订单状态不可支付：" + row.status());
         }
 
-        String cardKey = createLicenseForPlan(row.planDays());
-        if (!orders.markPaid(row.orderNo(), row.clientToken(), cardKey)) {
+        int quantity = Math.max(1, row.quantity());
+        orders.ensureOrderItems(row.orderNo(), quantity);
+        String firstCardKey = null;
+
+        for (int itemNo = 1; itemNo <= quantity; itemNo++) {
+            String cardKey = createLicenseForPlan(row.planDays());
+            if (!orders.assignCardToItem(row.orderNo(), itemNo, cardKey)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "订单卡密生成状态已变化，请刷新");
+            }
+            if (firstCardKey == null) firstCardKey = cardKey;
+        }
+
+        if (!orders.markPaid(row.orderNo(), row.clientToken(), firstCardKey)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "订单状态已变化，请刷新");
         }
         return orders.find(row.orderNo(), row.clientToken());
@@ -143,6 +186,8 @@ public class OrderService {
         String orderNo,
         String clientToken,
         int planDays,
+        int quantity,
+        int unitAmountFen,
         int amountFen,
         String status,
         String expiresAt
