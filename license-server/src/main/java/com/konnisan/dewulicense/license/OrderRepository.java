@@ -17,7 +17,7 @@ public class OrderRepository {
     public boolean createOrder(
         String orderNo,
         String clientToken,
-        String deviceId,
+        String phone,
         int planDays,
         int amountFen,
         String expiresAt
@@ -41,7 +41,7 @@ public class OrderRepository {
                 """,
                 orderNo,
                 clientToken,
-                deviceId,
+                phone,
                 planDays,
                 amountFen,
                 expiresAt
@@ -53,37 +53,20 @@ public class OrderRepository {
 
     public OrderRow find(String orderNo, String clientToken) {
         List<OrderRow> rows = jdbc.query(
-            """
-            SELECT order_no,
-                   client_token,
-                   device_id,
-                   plan_days,
-                   amount_fen,
-                   status,
-                   card_key,
-                   created_at,
-                   paid_at,
-                   expires_at
-            FROM purchase_orders
-            WHERE order_no = ? AND client_token = ?
-            LIMIT 1
-            """,
-            (rs, rowNum) -> new OrderRow(
-                rs.getString("order_no"),
-                rs.getString("client_token"),
-                rs.getString("device_id"),
-                rs.getInt("plan_days"),
-                rs.getInt("amount_fen"),
-                rs.getString("status"),
-                rs.getString("card_key"),
-                rs.getString("created_at"),
-                rs.getString("paid_at"),
-                rs.getString("expires_at")
-            ),
+            baseSelect() + " WHERE order_no = ? AND client_token = ? LIMIT 1",
+            (rs, rowNum) -> mapRow(rs),
             orderNo,
             clientToken
         );
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    public List<OrderRow> findPaidByPhone(String phone) {
+        return jdbc.query(
+            baseSelect() + " WHERE device_id = ? AND status = 'PAID' ORDER BY paid_at DESC, id DESC",
+            (rs, rowNum) -> mapRow(rs),
+            phone
+        );
     }
 
     public boolean markExpiredIfNeeded(String orderNo) {
@@ -116,10 +99,42 @@ public class OrderRepository {
         ) == 1;
     }
 
+    private String baseSelect() {
+        return """
+            SELECT id,
+                   order_no,
+                   client_token,
+                   device_id,
+                   plan_days,
+                   amount_fen,
+                   status,
+                   card_key,
+                   created_at,
+                   paid_at,
+                   expires_at
+            FROM purchase_orders
+            """;
+    }
+
+    private OrderRow mapRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new OrderRow(
+            rs.getString("order_no"),
+            rs.getString("client_token"),
+            rs.getString("device_id"),
+            rs.getInt("plan_days"),
+            rs.getInt("amount_fen"),
+            rs.getString("status"),
+            rs.getString("card_key"),
+            rs.getString("created_at"),
+            rs.getString("paid_at"),
+            rs.getString("expires_at")
+        );
+    }
+
     public record OrderRow(
         String orderNo,
         String clientToken,
-        String deviceId,
+        String phone,
         int planDays,
         int amountFen,
         String status,
