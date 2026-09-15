@@ -53,7 +53,7 @@ public class OrderRepository {
 
     public OrderRow find(String orderNo, String clientToken) {
         List<OrderRow> rows = jdbc.query(
-            baseSelect() + " WHERE order_no = ? AND client_token = ? LIMIT 1",
+            baseSelect() + " WHERE o.order_no = ? AND o.client_token = ? LIMIT 1",
             (rs, rowNum) -> mapRow(rs),
             orderNo,
             clientToken
@@ -63,7 +63,7 @@ public class OrderRepository {
 
     public List<OrderRow> findPaidByPhone(String phone) {
         return jdbc.query(
-            baseSelect() + " WHERE device_id = ? AND status = 'PAID' ORDER BY paid_at DESC, id DESC",
+            baseSelect() + " WHERE o.device_id = ? AND o.status = 'PAID' ORDER BY o.paid_at DESC, o.id DESC",
             (rs, rowNum) -> mapRow(rs),
             phone
         );
@@ -101,18 +101,20 @@ public class OrderRepository {
 
     private String baseSelect() {
         return """
-            SELECT id,
-                   order_no,
-                   client_token,
-                   device_id,
-                   plan_days,
-                   amount_fen,
-                   status,
-                   card_key,
-                   created_at,
-                   paid_at,
-                   expires_at
-            FROM purchase_orders
+            SELECT o.id,
+                   o.order_no,
+                   o.client_token,
+                   o.device_id,
+                   o.plan_days,
+                   o.amount_fen,
+                   o.status,
+                   o.card_key,
+                   o.created_at,
+                   o.paid_at,
+                   o.expires_at,
+                   k.expires_at AS license_expires_at
+            FROM purchase_orders o
+            LEFT JOIN license_keys k ON k.card_key = o.card_key
             """;
     }
 
@@ -127,7 +129,8 @@ public class OrderRepository {
             rs.getString("card_key"),
             rs.getString("created_at"),
             rs.getString("paid_at"),
-            rs.getString("expires_at")
+            rs.getString("expires_at"),
+            rs.getString("license_expires_at")
         );
     }
 
@@ -141,6 +144,7 @@ public class OrderRepository {
         String cardKey,
         String createdAt,
         String paidAt,
-        String expiresAt
+        String orderExpiresAt,
+        String licenseExpiresAt
     ) {}
 }
