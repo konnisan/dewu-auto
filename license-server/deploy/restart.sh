@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/data/dewu-license}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${APP_DIR:-$SCRIPT_DIR}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/license.env}"
 
 if [[ -f "$ENV_FILE" ]]; then
@@ -54,10 +55,12 @@ echo "$NEW_PID" > "$PID_FILE"
 sleep 2
 if kill -0 "$NEW_PID" 2>/dev/null; then
   echo "Started dewu-license-server"
+  echo "APP_DIR: $APP_DIR"
   echo "PID: $NEW_PID"
   echo "PORT: $PORT (127.0.0.1 only)"
   echo "DB: $DB_PATH"
   echo "LOG: $LOG_FILE"
+  echo "PAYMENT_MODE: ${LICENSE_PAYMENT_MODE:-mock}"
   if [[ -n "${LICENSE_ADMIN_TOKEN:-}" ]]; then
     echo "ADMIN: enabled"
   else
