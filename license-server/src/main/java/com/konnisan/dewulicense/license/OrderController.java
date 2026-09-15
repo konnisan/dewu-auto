@@ -27,7 +27,8 @@ public class OrderController {
     public ResponseEntity<Map<String, Object>> create(@RequestBody(required = false) CreateOrderRequest request) {
         String phone = request == null ? null : request.phone();
         Integer planDays = request == null ? null : request.planDays();
-        OrderService.CreatedOrder order = service.create(phone, planDays);
+        Integer quantity = request == null ? null : request.quantity();
+        OrderService.CreatedOrder order = service.create(phone, planDays, quantity);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", true);
@@ -35,6 +36,8 @@ public class OrderController {
         body.put("clientToken", order.clientToken());
         body.put("status", order.status());
         body.put("planDays", order.planDays());
+        body.put("quantity", order.quantity());
+        body.put("unitAmountFen", order.unitAmountFen());
         body.put("amountFen", order.amountFen());
         body.put("expiresAt", order.expiresAt());
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
@@ -42,7 +45,7 @@ public class OrderController {
 
     @GetMapping("/query")
     public Map<String, Object> queryByPhone(@RequestParam("phone") String phone) {
-        List<Map<String, Object>> rows = service.queryPaidByPhone(phone).stream()
+        List<Map<String, Object>> rows = service.queryByPhone(phone).stream()
             .map(this::toPublicQueryBody)
             .toList();
         Map<String, Object> body = new LinkedHashMap<>();
@@ -75,13 +78,17 @@ public class OrderController {
         body.put("orderNo", row.orderNo());
         body.put("status", row.status());
         body.put("planDays", row.planDays());
+        body.put("quantity", row.quantity());
         body.put("amountFen", row.amountFen());
         body.put("createdAt", row.createdAt());
         body.put("paidAt", row.paidAt());
         body.put("orderExpiresAt", row.orderExpiresAt());
-        if ("PAID".equals(row.status()) && row.cardKey() != null) {
-            body.put("cardKey", row.cardKey());
-            body.put("licenseExpiresAt", row.licenseExpiresAt());
+
+        List<Map<String, Object>> cards = cardBodies(row.orderNo());
+        body.put("cards", cards);
+        if (!cards.isEmpty()) {
+            body.put("cardKey", cards.get(0).get("cardKey"));
+            body.put("licenseExpiresAt", cards.get(0).get("licenseExpiresAt"));
         }
         return body;
     }
@@ -89,13 +96,26 @@ public class OrderController {
     private Map<String, Object> toPublicQueryBody(OrderRepository.OrderRow row) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("orderNo", row.orderNo());
-        body.put("cardKey", row.cardKey());
+        body.put("status", row.status());
         body.put("planDays", row.planDays());
+        body.put("quantity", row.quantity());
+        body.put("amountFen", row.amountFen());
+        body.put("createdAt", row.createdAt());
         body.put("paidAt", row.paidAt());
-        body.put("licenseExpiresAt", row.licenseExpiresAt());
+        body.put("cards", cardBodies(row.orderNo()));
         return body;
     }
 
-    public record CreateOrderRequest(String phone, Integer planDays) {}
+    private List<Map<String, Object>> cardBodies(String orderNo) {
+        return service.cardsForOrder(orderNo).stream().map(card -> {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("itemNo", card.itemNo());
+            body.put("cardKey", card.cardKey());
+            body.put("licenseExpiresAt", card.licenseExpiresAt());
+            return body;
+        }).toList();
+    }
+
+    public record CreateOrderRequest(String phone, Integer planDays, Integer quantity) {}
     public record MockPayRequest(String clientToken) {}
 }
