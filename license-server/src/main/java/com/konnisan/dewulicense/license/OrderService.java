@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -35,11 +36,9 @@ public class OrderService {
         this.licenses = licenses;
     }
 
-    public CreatedOrder create(String deviceId, Integer requestedPlanDays) {
-        String normalizedDevice = deviceId == null ? "" : deviceId.trim();
-        if (normalizedDevice.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "deviceId 不能为空");
-        }
+    public CreatedOrder create(String phone, Integer requestedPlanDays) {
+        String normalizedPhone = normalizePhone(phone);
+        requirePhone(normalizedPhone);
 
         int planDays = requestedPlanDays == null ? 30 : requestedPlanDays;
         Integer amountFen = PLAN_PRICES.get(planDays);
@@ -48,13 +47,13 @@ public class OrderService {
         }
 
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-        String expiresAt = now.plusMinutes(20).format(SQLITE_TIME);
+        String orderExpiresAt = now.plusMinutes(20).format(SQLITE_TIME);
         String clientToken = generateClientToken();
 
         for (int attempt = 0; attempt < 8; attempt++) {
             String orderNo = generateOrderNo(now);
-            if (orders.createOrder(orderNo, clientToken, normalizedDevice, planDays, amountFen, expiresAt)) {
-                return new CreatedOrder(orderNo, clientToken, planDays, amountFen, "CREATED", expiresAt);
+            if (orders.createOrder(orderNo, clientToken, normalizedPhone, planDays, amountFen, orderExpiresAt)) {
+                return new CreatedOrder(orderNo, clientToken, planDays, amountFen, "CREATED", orderExpiresAt);
             }
         }
         throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建订单失败，请重试");
@@ -71,6 +70,12 @@ public class OrderService {
             row = orders.find(row.orderNo(), row.clientToken());
         }
         return row;
+    }
+
+    public List<OrderRepository.OrderRow> queryPaidByPhone(String phone) {
+        String normalizedPhone = normalizePhone(phone);
+        requirePhone(normalizedPhone);
+        return orders.findPaidByPhone(normalizedPhone);
     }
 
     @Transactional
@@ -98,6 +103,16 @@ public class OrderService {
             if (licenses.createLicense(cardKey, licenseExpiresAt)) return cardKey;
         }
         throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "生成卡密失败，请重试");
+    }
+
+    private String normalizePhone(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private void requirePhone(String phone) {
+        if (!phone.matches("^1\\d{10}$")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请输入正确的 11 位手机号");
+        }
     }
 
     private void requireCredentials(String orderNo, String clientToken) {
