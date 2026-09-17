@@ -60,7 +60,6 @@ if kill -0 "$NEW_PID" 2>/dev/null; then
   echo "PORT: $PORT (127.0.0.1 only)"
   echo "DB: $DB_PATH"
   echo "LOG: $LOG_FILE"
-  echo "PAYMENT_MODE: ${LICENSE_PAYMENT_MODE:-mock}"
   if [[ -n "${LICENSE_ADMIN_TOKEN:-}" ]]; then
     echo "ADMIN: enabled"
   else
