@@ -42,6 +42,13 @@ public class AdminController {
         this.adminToken = adminToken == null ? "" : adminToken.trim();
     }
 
+    @PostMapping("/login")
+    public Map<String, Object> login(@RequestBody(required = false) LoginRequest request) {
+        String password = request == null ? "" : request.password();
+        requireAdminToken(password);
+        return Map.of("ok", true);
+    }
+
     @GetMapping("/licenses")
     public List<Map<String, Object>> list(
         @RequestHeader(value = "Authorization", required = false) String authorization
@@ -121,20 +128,25 @@ public class AdminController {
     }
 
     private void requireAdmin(String authorization) {
-        if (adminToken.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "LICENSE_ADMIN_TOKEN 未配置");
-        }
         String provided = authorization == null ? "" : authorization.trim();
         if (provided.regionMatches(true, 0, "Bearer ", 0, 7)) {
             provided = provided.substring(7).trim();
         } else {
             provided = "";
         }
+        requireAdminToken(provided);
+    }
+
+    private void requireAdminToken(String provided) {
+        if (adminToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "LICENSE_ADMIN_TOKEN 未配置");
+        }
+        String normalized = provided == null ? "" : provided.trim();
         boolean matches = MessageDigest.isEqual(
             adminToken.getBytes(StandardCharsets.UTF_8),
-            provided.getBytes(StandardCharsets.UTF_8)
+            normalized.getBytes(StandardCharsets.UTF_8)
         );
-        if (!matches) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "管理员 Token 错误");
+        if (!matches) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "管理密码错误");
     }
 
     private String normalizeCardKey(String value) {
@@ -149,6 +161,7 @@ public class AdminController {
             + "-" + hex.substring(8, 12) + "-" + hex.substring(12, 16);
     }
 
+    public record LoginRequest(String password) {}
     public record CreateLicenseRequest(Integer days, String cardKey) {}
     public record StatusRequest(String status) {}
 }
