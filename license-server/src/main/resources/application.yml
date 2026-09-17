@@ -20,8 +20,6 @@ spring:
 
 license:
   admin-token: ${LICENSE_ADMIN_TOKEN:}
-  payment:
-    mode: ${LICENSE_PAYMENT_MODE:mock}
 
 logging:
   file:
