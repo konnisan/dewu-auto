@@ -13,3 +13,8 @@ hs_err_pid*.log
 replay_pid*.log
 潮流生活 触手可得(20).apk.1.1.1*.apk*
 *.apk*
+
+# Local license-server runtime and verification artifacts
+/license-server/admin-password.txt
+/license-server/target/
+/license-server/.local-preview/

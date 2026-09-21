@@ -19,7 +19,7 @@ spring:
       schema-locations: classpath:schema.sql
 
 license:
-  admin-token: ${LICENSE_ADMIN_TOKEN:}
+  admin-password-file: ${LICENSE_ADMIN_PASSWORD_FILE:admin-password.txt}
 
 logging:
   file:

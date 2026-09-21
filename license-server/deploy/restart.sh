@@ -19,6 +19,7 @@ LOG_DIR="${LOG_DIR:-$APP_DIR/logs}"
 LOG_FILE="${LICENSE_LOG_FILE:-$LOG_DIR/app.log}"
 DB_PATH="${LICENSE_DB_PATH:-$APP_DIR/data/license.db}"
 PORT="${LICENSE_PORT:-8080}"
+PASSWORD_FILE="${LICENSE_ADMIN_PASSWORD_FILE:-$APP_DIR/admin-password.txt}"
 
 mkdir -p "$LOG_DIR" "$(dirname "$DB_PATH")"
 
@@ -47,6 +48,7 @@ fi
 export LICENSE_DB_PATH="$DB_PATH"
 export LICENSE_LOG_FILE="$LOG_FILE"
 export LICENSE_PORT="$PORT"
+export LICENSE_ADMIN_PASSWORD_FILE="$PASSWORD_FILE"
 
 nohup java -Xms128m -Xmx512m -jar "$JAR_FILE" >> "$LOG_FILE" 2>&1 &
 NEW_PID=$!
@@ -60,10 +62,10 @@ if kill -0 "$NEW_PID" 2>/dev/null; then
   echo "PORT: $PORT (127.0.0.1 only)"
   echo "DB: $DB_PATH"
   echo "LOG: $LOG_FILE"
-  if [[ -n "${LICENSE_ADMIN_TOKEN:-}" ]]; then
-    echo "ADMIN: enabled"
+  if [[ -f "$PASSWORD_FILE" ]]; then
+    echo "ADMIN PASSWORD FILE: $PASSWORD_FILE"
   else
-    echo "ADMIN: disabled (set LICENSE_ADMIN_TOKEN in $ENV_FILE)"
+    echo "ADMIN PASSWORD FILE: missing ($PASSWORD_FILE)"
   fi
 else
   echo "Startup failed. Check: $LOG_FILE"

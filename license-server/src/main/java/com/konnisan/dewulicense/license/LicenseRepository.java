@@ -1,5 +1,6 @@
 package com.konnisan.dewulicense.license;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -13,6 +14,33 @@ public class LicenseRepository {
 
     public LicenseRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+    }
+
+    @PostConstruct
+    public void migrateAdminMetadata() {
+        boolean hasRemark = jdbc.queryForList("PRAGMA table_info(license_keys)").stream()
+            .anyMatch(column -> "remark".equalsIgnoreCase(String.valueOf(column.get("name"))));
+        if (!hasRemark) {
+            jdbc.execute("ALTER TABLE license_keys ADD COLUMN remark TEXT");
+        }
+        jdbc.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quick_remarks (
+                remark TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        );
+        jdbc.update(
+            """
+            INSERT OR IGNORE INTO quick_remarks(remark, created_at, updated_at)
+            SELECT remark, MIN(created_at), MAX(created_at)
+            FROM license_keys
+            WHERE remark IS NOT NULL AND trim(remark) <> ''
+            GROUP BY remark
+            """
+        );
     }
 
     public LicenseRow findLicense(String cardKey) {
@@ -120,10 +148,15 @@ public class LicenseRepository {
             """
             SELECT k.card_key AS cardKey,
                    k.status AS status,
+                   k.remark AS remark,
                    k.bound_device_id AS boundDeviceId,
                    k.expires_at AS expiresAt,
                    k.created_at AS createdAt,
                    k.updated_at AS updatedAt,
+                   CASE
+                       WHEN k.expires_at IS NULL THEN 0
+                       ELSE CAST(ROUND(julianday(k.expires_at) - julianday(k.created_at)) AS INTEGER)
+                   END AS days,
                    (SELECT MAX(s.last_heartbeat_at)
                       FROM license_sessions s
                      WHERE s.card_key = k.card_key) AS lastHeartbeatAt,
@@ -131,24 +164,56 @@ public class LicenseRepository {
                       FROM license_sessions s
                      WHERE s.card_key = k.card_key) AS sessionCount
             FROM license_keys k
-            ORDER BY k.created_at DESC, k.id DESC
+            ORDER BY datetime(k.created_at) DESC, k.id DESC
             """
         );
     }
 
     public boolean createLicense(String cardKey, String expiresAt) {
+        return createLicense(cardKey, expiresAt, null);
+    }
+
+    public boolean createLicense(String cardKey, String expiresAt, String remark) {
         try {
             return jdbc.update(
                 """
-                INSERT INTO license_keys(card_key, status, bound_device_id, expires_at, created_at, updated_at)
-                VALUES (?, 'ACTIVE', NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO license_keys(card_key, status, remark, bound_device_id, expires_at, created_at, updated_at)
+                VALUES (?, 'ACTIVE', ?, NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 cardKey,
+                remark,
                 expiresAt
             ) == 1;
         } catch (DataAccessException ex) {
             return false;
         }
+    }
+
+    public List<String> listRecentRemarks() {
+        return jdbc.queryForList(
+            """
+            SELECT remark
+            FROM quick_remarks
+            ORDER BY datetime(updated_at) DESC, rowid DESC
+            LIMIT 30
+            """,
+            String.class
+        );
+    }
+
+    public void saveQuickRemark(String remark) {
+        jdbc.update(
+            """
+            INSERT INTO quick_remarks(remark, created_at, updated_at)
+            VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(remark) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+            """,
+            remark
+        );
+    }
+
+    public boolean deleteQuickRemark(String remark) {
+        return jdbc.update("DELETE FROM quick_remarks WHERE remark = ?", remark) == 1;
     }
 
     public boolean updateStatus(String cardKey, String status) {
