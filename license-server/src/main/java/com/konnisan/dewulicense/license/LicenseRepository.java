@@ -25,6 +25,14 @@ public class LicenseRepository {
         }
         jdbc.execute(
             """
+            CREATE TABLE IF NOT EXISTS app_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        );
+        jdbc.execute(
+            """
             CREATE TABLE IF NOT EXISTS quick_remarks (
                 remark TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -32,15 +40,26 @@ public class LicenseRepository {
             )
             """
         );
-        jdbc.update(
-            """
-            INSERT OR IGNORE INTO quick_remarks(remark, created_at, updated_at)
-            SELECT remark, MIN(created_at), MAX(created_at)
-            FROM license_keys
-            WHERE remark IS NOT NULL AND trim(remark) <> ''
-            GROUP BY remark
-            """
+        Integer seeded = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM app_migrations WHERE name = ?",
+            Integer.class,
+            "seed_quick_remarks_v1"
         );
+        if (seeded == null || seeded == 0) {
+            jdbc.update(
+                """
+                INSERT OR IGNORE INTO quick_remarks(remark, created_at, updated_at)
+                SELECT trim(remark), MIN(created_at), MAX(created_at)
+                FROM license_keys
+                WHERE remark IS NOT NULL AND trim(remark) <> ''
+                GROUP BY trim(remark)
+                """
+            );
+            jdbc.update(
+                "INSERT OR IGNORE INTO app_migrations(name) VALUES (?)",
+                "seed_quick_remarks_v1"
+            );
+        }
     }
 
     public LicenseRow findLicense(String cardKey) {

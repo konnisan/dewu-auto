@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS quick_remarks (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS app_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_license_keys_status ON license_keys(status);
 CREATE INDEX IF NOT EXISTS idx_license_sessions_card_device ON license_sessions(card_key, device_id);
 CREATE INDEX IF NOT EXISTS idx_license_sessions_heartbeat ON license_sessions(last_heartbeat_at);
